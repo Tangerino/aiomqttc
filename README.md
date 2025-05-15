@@ -1,6 +1,9 @@
 # aiomqttc - Asynchronous MQTT Client
 
-An asynchronous MQTT client implementation compatible with both standard Python (CPython) and MicroPython environments, particularly optimized for ESP32 platforms.
+An asynchronous MQTT client implementation compatible with both standard Python and MicroPython environments,
+particularly optimized for ESP32 platforms.
+
+Tested with MicroPython v1.23.0 and Python v3.11.11
 
 ## Features
 
@@ -16,8 +19,7 @@ An asynchronous MQTT client implementation compatible with both standard Python 
 ## Installation
 
 ```bash
-# For CPython environments:
-pip install aiomqttc
+# For standard Python environments:
 
 # For MicroPython environments:
 # Copy aiomqttc.py to your device
@@ -29,13 +31,16 @@ pip install aiomqttc
 import asyncio
 from aiomqttc import MQTTClient
 
+
 async def on_connect_callback(client, userdata, flags, rc):
     print(f"Connected with result code {rc}")
     # Subscribe to a topic
     await client.subscribe("home/+/status", qos=1)
-    
+
+
 async def message_callback(topic, message, retain):
     print(f"Received message on {topic}: {message}")
+
 
 async def main():
     # Create an MQTT client
@@ -47,14 +52,14 @@ async def main():
         password="password",
         keepalive=60
     )
-    
+
     # Set up callback for incoming messages
     client.on_connect = on_connect_callback
     client.on_message = message_callback
-    
+
     # Connect to broker
     await client.connect()
-    
+
     # Keep the connection alive
     try:
         while True:
@@ -63,6 +68,7 @@ async def main():
             await asyncio.sleep(1)
     except KeyboardInterrupt:
         await client.disconnect()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
