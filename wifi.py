@@ -3,10 +3,9 @@ try:
 except ImportError:
     # For platforms that don't support network (like MicroPython)
     network = None
-from time import sleep
 
 
-def wifi(ssid, password):
+def wifi(ssid: str, password: str) -> None:
     if network is None:
         return
     sta_if = network.WLAN(network.STA_IF)

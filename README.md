@@ -3,7 +3,10 @@
 An asynchronous MQTT client implementation compatible with both standard Python and MicroPython environments,
 particularly optimized for ESP32 platforms.
 
-Tested with MicroPython v1.23.0 and Python v3.11.11
+Tested on:
+- ESP32-PICO
+  - MicroPython v1.23.0
+  - RAM: 2MB
 
 ## Features
 
