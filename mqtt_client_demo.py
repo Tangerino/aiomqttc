@@ -7,6 +7,7 @@ handles graceful shutdown on Ctrl+C.
 """
 
 import asyncio
+import gc
 import random
 
 from config import Config
@@ -22,21 +23,58 @@ from aiomqttc import MQTTClient, log, _IS_MICROPYTHON
 
 # Flag to indicate shutdown
 shutdown_requested = False
+lowest_ram_free = None
+max_ram_usage = 0
 
 
-# Define callback for received messages
-def on_message(topic, payload, retain):
+def gc_mem_free() -> int:
+    if hasattr(gc, "mem_free"):
+        return gc.mem_free()
+    return 0
+
+
+def gc_mem_alloc():
+    if hasattr(gc, "mem_alloc"):
+        return gc.mem_alloc()
+    return 0
+
+
+async def on_message(client, topic, payload, retain):
     log(f"Received message on {topic}: {payload.decode()}")
 
 
+def check_ram_usage(quiet: bool = False):
+    """Check and log RAM usage"""
+    mem_alloc = gc_mem_alloc()
+    mem_free = gc_mem_free()
+    global lowest_ram_free
+    global max_ram_usage
+    if mem_alloc > max_ram_usage:
+        max_ram_usage = mem_alloc
+    if lowest_ram_free is None or mem_free < lowest_ram_free:
+        lowest_ram_free = mem_free
+    if not quiet:
+        log(f"    Free RAM...........: {mem_free // 1024:6d} Kb")
+        log(f"    Allocated RAM......: {mem_alloc // 1024:6d} Kb")
+        log(f"    Lowest Free RAM....: {lowest_ram_free // 1024:6d} Kb")
+        log(f"    Max Allocated RAM..: {max_ram_usage // 1024:6d} Kb")
+
+
 # Define callback for successful connection
-def on_connect(client, return_code):
+async def on_connect(client, return_code):
     log(f"Connected with code {return_code}")
-    asyncio.create_task(client.subscribe("test/test", qos=1))
+    await client.subscribe("test/test", qos=1)
+
+
+async def on_ping(client, request: bool, rtt_ms: int):
+    if request:
+        log("PING sent to broker")
+    else:
+        log(f"PING response received from broker in {rtt_ms} ms")
 
 
 # Define callback for disconnection
-def on_disconnect(return_code):
+async def on_disconnect(return_code):
     if return_code:
         log(f"Disconnected with code {return_code}")
     else:
@@ -54,7 +92,9 @@ def signal_handler():
 async def register_signal_handlers():
     if _IS_MICROPYTHON:
         # MicroPython does not support signal handlers
-        log("Signal handlers are not supported in MicroPython. Using KeyboardInterrupt fallback.")
+        log(
+            "Signal handlers are not supported in MicroPython. Using KeyboardInterrupt fallback."
+        )
         return
     loop = asyncio.get_running_loop()
 
@@ -64,12 +104,6 @@ async def register_signal_handlers():
         except NotImplementedError:
             # For systems where add_signal_handler is not implemented (e.g., Windows)
             log("Warning: Signal handlers not fully supported on this platform.")
-
-            # Fallback for Windows
-            def win_handler(signum, frame):
-                signal_handler()
-
-            signal.signal(sig, win_handler)
 
 
 async def periodic_publish(client: MQTTClient, config: Config):
@@ -94,14 +128,24 @@ async def client_connect(config: Config) -> MQTTClient:
     username = config.mqtt_username
     password = config.mqtt_password
     ssl = config.mqtt_tls
-    keepalive = 60
+    keepalive = 15
     verbose: int = 0
     # ================
-    client = MQTTClient(client_id=client_id, server=server, ssl=ssl, keepalive=keepalive, user=username, password=password, port=port, verbose=verbose)
+    client = MQTTClient(
+        client_id=client_id,
+        server=server,
+        ssl=ssl,
+        keepalive=keepalive,
+        user=username,
+        password=password,
+        port=port,
+        verbose=verbose,
+    )
     # ================
     client.on_message = on_message
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
+    client.on_ping = on_ping
     while True:
         log("Connecting to broker...")
         if await client.connect():
@@ -121,12 +165,24 @@ async def main():
 
     log("Running... (Press Ctrl+C to exit)")
     global shutdown_requested
+    check_ram_usage(quiet=True)
     try:
         while not shutdown_requested:
             client = await client_connect(config)
-            periodic_publish_task = asyncio.create_task(periodic_publish(client, config))
+            periodic_publish_task = asyncio.create_task(
+                periodic_publish(client, config)
+            )
+            ram_loop = 0
+            max_ram_loop = 5
             while client.connected and not shutdown_requested:
                 await asyncio.sleep(1)
+                ram_loop += 1
+                if ram_loop >= max_ram_loop:
+                    ram_loop = 0
+                    quiet = False
+                else:
+                    quiet = True
+                check_ram_usage(quiet=quiet)
             await periodic_publish_task
             log("Disconnected from broker, stopping periodic publish task.")
             await client.disconnect()

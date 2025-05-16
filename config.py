@@ -13,7 +13,7 @@ class Config:
 
     def load(self):
         try:
-            with open('config.json', 'r') as config_file:
+            with open("config.json", "r") as config_file:
                 config = json.load(config_file)
                 self.wifi_ssid = config.get("wifi", {}).get("ssid", "")
                 self.wifi_password = config.get("wifi", {}).get("password", "")
@@ -30,19 +30,16 @@ class Config:
 
     def save(self):
         config = {
-            "wifi": {
-                "ssid": self.wifi_ssid,
-                "password": self.wifi_password
-            },
+            "wifi": {"ssid": self.wifi_ssid, "password": self.wifi_password},
             "mqtt": {
                 "broker": self.mqtt_broker,
                 "port": self.mqtt_port,
                 "username": self.mqtt_username,
                 "password": self.mqtt_password,
-                "tls": self.mqtt_tls
-            }
+                "tls": self.mqtt_tls,
+            },
         }
-        with open('config.json', 'w') as config_file:
+        with open("config.json", "w") as config_file:
             json.dump(config, config_file, indent=4)
         print("Config file created with default values.")
         return config
