@@ -10,6 +10,7 @@ import asyncio
 import gc
 import json
 import random
+from time import time
 
 from config import Config
 from wifi import wifi
@@ -27,6 +28,20 @@ shutdown_requested = False
 lowest_ram_free = None
 max_ram_usage = 0
 lowest_wifi_signal = None
+
+boot_time = time()
+
+
+def get_uptime():
+    uptime = int(time() - boot_time)
+    minutes = uptime // 60
+    hours = minutes // 60
+    days = hours // 24
+    str_uptime = f"{int(days)}d {int(hours % 24)}h {int(minutes % 60)}m {int(uptime % 60)}s"
+    return {
+        "uptime": str_uptime,
+        "uptime_sec": uptime,
+    }
 
 
 def gc_mem_free() -> int:
@@ -65,8 +80,8 @@ def check_wifi_signal(sta, quiet: bool = False) -> dict:
             log(f"    IP Address..........: {ip}")
             log(f"    MAC Address.........: {mac}")
         return {
-            "rssi": rssi,
-            "lowest_signal": lowest_wifi_signal,
+            "signal": rssi,
+            "signal_lowest": lowest_wifi_signal,
             "ip": ip,
             "mac": mac,
         }
@@ -94,7 +109,7 @@ def check_ram_usage(quiet: bool = False) -> dict:
     return {
         "free": mem_free,
         "allocated": mem_alloc,
-        "lowest_free": lowest_ram_free,
+        "free_lowest": lowest_ram_free,
         "max_allocated": max_ram_usage,
     }
 
@@ -244,12 +259,13 @@ def print_client_stats(client: MQTTClient) -> dict:
     return stats
 
 
-async def publish_stats(client: MQTTClient, client_stats: dict, wifi_stats: dict, ram_stats: dict):
+async def publish_stats(client: MQTTClient, client_stats: dict, wifi_stats: dict, ram_stats: dict, uptime_stats: dict):
     """Publish stats to the broker"""
     stats = {
         "client": client_stats,
         "wifi": wifi_stats,
         "ram": ram_stats,
+        "uptime": uptime_stats,
     }
     message = json.dumps(stats, separators=(",", ":"))
     log(f"Publishing stats: {message}")
@@ -275,7 +291,7 @@ async def main():
             periodic_publish_task = asyncio.create_task(periodic_publish(client, config))
             ram_loop = 0
             max_ram_loop = 5
-            client_stats = {}
+            uptime_stats = {}
             ram_stats = {}
             wifi_stats = {}
             while client.connected and not shutdown_requested:
@@ -285,11 +301,12 @@ async def main():
                     ram_loop = 0
                     quiet = False
                     client_stats = print_client_stats(client)
-                    await publish_stats(client, client_stats, wifi_stats, ram_stats)
+                    await publish_stats(client, client_stats, wifi_stats, ram_stats, uptime_stats)
                 else:
                     quiet = True
                 ram_stats = check_ram_usage(quiet=quiet)
                 wifi_stats = check_wifi_signal(sta, quiet=quiet)
+                uptime_stats = get_uptime()
             periodic_publish_task.cancel()
             try:
                 await periodic_publish_task
