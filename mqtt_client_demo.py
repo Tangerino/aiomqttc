@@ -25,6 +25,7 @@ from aiomqttc import MQTTClient, log, _IS_MICROPYTHON
 shutdown_requested = False
 lowest_ram_free = None
 max_ram_usage = 0
+lowest_wifi_signal = None
 
 
 def gc_mem_free() -> int:
@@ -43,6 +44,27 @@ async def on_message(client, topic, payload, retain):
     log(f"Received message on {topic}: {payload.decode()}")
 
 
+def check_wifi_signal(sta, quiet: bool = False):
+    """Check and log WiFi signal strength"""
+    global lowest_wifi_signal
+    if not sta:
+        return
+
+    rssi = sta.status("rssi")
+
+    if lowest_wifi_signal is None or rssi < lowest_wifi_signal:
+        lowest_wifi_signal = rssi
+
+    if not quiet:
+        ip = sta.ifconfig()[0]
+        mac = ":".join("{:02x}".format(b) for b in sta.config("mac"))
+        log("WiFi Signal Strength")
+        log(f"    WiFi Signal Strength: {rssi} dBm")
+        log(f"    Lowest WiFi Signal..: {lowest_wifi_signal} dBm")
+        log(f"    IP Address..........: {ip}")
+        log(f"    MAC Address.........: {mac}")
+
+
 def check_ram_usage(quiet: bool = False):
     """Check and log RAM usage"""
     mem_alloc = gc_mem_alloc()
@@ -54,10 +76,11 @@ def check_ram_usage(quiet: bool = False):
     if lowest_ram_free is None or mem_free < lowest_ram_free:
         lowest_ram_free = mem_free
     if not quiet:
-        log(f"    Free RAM...........: {mem_free // 1024:6d} Kb")
-        log(f"    Allocated RAM......: {mem_alloc // 1024:6d} Kb")
-        log(f"    Lowest Free RAM....: {lowest_ram_free // 1024:6d} Kb")
-        log(f"    Max Allocated RAM..: {max_ram_usage // 1024:6d} Kb")
+        log("RAM Usage")
+        log(f"    Free RAM............: {mem_free // 1024:6d} Kb")
+        log(f"    Allocated RAM.......: {mem_alloc // 1024:6d} Kb")
+        log(f"    Lowest Free RAM.....: {lowest_ram_free // 1024:6d} Kb")
+        log(f"    Max Allocated RAM...: {max_ram_usage // 1024:6d} Kb")
 
 
 # Define callback for successful connection
@@ -67,14 +90,15 @@ async def on_connect(client, return_code):
 
 
 async def on_ping(client, request: bool, rtt_ms: int):
-    if request:
-        log("PING sent to broker")
-    else:
-        log(f"PING response received from broker in {rtt_ms} ms")
+    # if request:
+    #     log("PING sent to broker")
+    # else:
+    #     log(f"PING response received from broker in {rtt_ms} ms")
+    pass
 
 
 # Define callback for disconnection
-async def on_disconnect(return_code):
+async def on_disconnect(client, return_code):
     if return_code:
         log(f"Disconnected with code {return_code}")
     else:
@@ -113,10 +137,10 @@ async def periodic_publish(client: MQTTClient, config: Config):
     while not shutdown_requested:
         count += 1
         message = f"Periodic message #{count} from MicroPython"
-        log(f"Publishing: {message}")
-        pid = await client.publish("micropython/test", message, qos=1)
-        if pid is None:
-            log("Failed to publish message")
+        # log(f"Publishing: {message}")
+        ok = await client.publish("micropython/test", message, qos=1)
+        if not ok:
+            log("[MAIN] Failed to publish message")
         await asyncio.sleep(1)
     log("Periodic publish task stopped.")
 
@@ -146,14 +170,61 @@ async def client_connect(config: Config) -> MQTTClient:
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
     client.on_ping = on_ping
+    mqtt_retry_min_delay = 1  # in seconds
+    mqtt_retry_max_delay = 60
+
+    delay = mqtt_retry_min_delay
     while True:
         log("Connecting to broker...")
         if await client.connect():
             log("Connected to broker")
             break
-        log("Failed to connect to broker, retrying...")
-        await asyncio.sleep(5)
+        log(f"Failed to connect to broker, retrying in {delay} seconds...")
+        await asyncio.sleep(delay + random.uniform(0, 0.5 * delay))
+        delay = min(delay * 2, mqtt_retry_max_delay)
     return client
+
+
+def print_stats_table(stats: dict):
+    """Print MQTT stats in a clean ASCII table format."""
+
+    rows = [
+        ["Connections", "Started", stats["connections_sent"]],
+        ["", "Failed", stats["connections_failed"]],
+        ["Packets", "Sent", stats["packets_sent"]],
+        ["", "Received", stats["packets_received"]],
+        ["Bytes", "Sent", stats["bytes_sent"]],
+        ["", "Received", stats["bytes_received"]],
+        ["Subscribe", "Avg Size", stats["sub_package_avg_size"]],
+        ["Publish", "OK Count", stats["pub_ok_count"]],
+        ["", "Fail Count", stats["pub_fail_count"]],
+        ["", "RTT (ms)", stats["pub_rtt_ms"]],
+        ["", "Avg Size", stats["pub_package_avg_size"]],
+        ["Ping", "Sent", stats["ping_sent_count"]],
+        ["", "Received", stats["ping_received_count"]],
+        ["", "RTT (ms)", stats["ping_rtt_ms"]],
+    ]
+
+    col_widths = [max(len(row[i]) for row in rows) if i < 2 else 10 for i in range(3)]
+
+    def border():
+        return "+-" + "-+-".join("-" * w for w in col_widths) + "-+"
+
+    def format_row(row):
+        return "| " + " | ".join(f"{str(cell):{w}}" for cell, w in zip(row, col_widths)) + " |"
+
+    log("MQTT Client Stats")
+    print(border())
+    print(format_row(["Category", "Metric", "Value"]))
+    print(border())
+    for row in rows:
+        print(format_row(row))
+    print(border())
+
+
+def print_client_stats(client: MQTTClient):
+    stats = client.stats.get_stats()
+    return print_stats_table(stats)
 
 
 async def main():
@@ -161,7 +232,7 @@ async def main():
     await register_signal_handlers()
     config = Config()
     config.load()
-    wifi(config.wifi_ssid, config.wifi_password)
+    sta = wifi(config.wifi_ssid, config.wifi_password)
 
     log("Running... (Press Ctrl+C to exit)")
     global shutdown_requested
@@ -169,9 +240,7 @@ async def main():
     try:
         while not shutdown_requested:
             client = await client_connect(config)
-            periodic_publish_task = asyncio.create_task(
-                periodic_publish(client, config)
-            )
+            periodic_publish_task = asyncio.create_task(periodic_publish(client, config))
             ram_loop = 0
             max_ram_loop = 5
             while client.connected and not shutdown_requested:
@@ -180,10 +249,16 @@ async def main():
                 if ram_loop >= max_ram_loop:
                     ram_loop = 0
                     quiet = False
+                    print_client_stats(client)
                 else:
                     quiet = True
                 check_ram_usage(quiet=quiet)
-            await periodic_publish_task
+                check_wifi_signal(sta, quiet=quiet)
+            periodic_publish_task.cancel()
+            try:
+                await periodic_publish_task
+            except asyncio.CancelledError:
+                log("Periodic publish task cancelled.")
             log("Disconnected from broker, stopping periodic publish task.")
             await client.disconnect()
             if not shutdown_requested:
