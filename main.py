@@ -8,6 +8,7 @@ handles graceful shutdown on Ctrl+C.
 
 import asyncio
 import gc
+import json
 import random
 
 from config import Config
@@ -44,28 +45,37 @@ async def on_message(client, topic, payload, retain):
     log(f"Received message on {topic}: {payload.decode()}")
 
 
-def check_wifi_signal(sta, quiet: bool = False):
+def check_wifi_signal(sta, quiet: bool = False) -> dict:
     """Check and log WiFi signal strength"""
     global lowest_wifi_signal
     if not sta:
-        return
+        return {}
+    try:
+        rssi = sta.status("rssi")
 
-    rssi = sta.status("rssi")
+        if lowest_wifi_signal is None or rssi < lowest_wifi_signal:
+            lowest_wifi_signal = rssi
 
-    if lowest_wifi_signal is None or rssi < lowest_wifi_signal:
-        lowest_wifi_signal = rssi
-
-    if not quiet:
         ip = sta.ifconfig()[0]
         mac = ":".join("{:02x}".format(b) for b in sta.config("mac"))
-        log("WiFi Signal Strength")
-        log(f"    WiFi Signal Strength: {rssi} dBm")
-        log(f"    Lowest WiFi Signal..: {lowest_wifi_signal} dBm")
-        log(f"    IP Address..........: {ip}")
-        log(f"    MAC Address.........: {mac}")
+        if not quiet:
+            log("WiFi Signal Strength")
+            log(f"    WiFi Signal Strength: {rssi} dBm")
+            log(f"    Lowest WiFi Signal..: {lowest_wifi_signal} dBm")
+            log(f"    IP Address..........: {ip}")
+            log(f"    MAC Address.........: {mac}")
+        return {
+            "rssi": rssi,
+            "lowest_signal": lowest_wifi_signal,
+            "ip": ip,
+            "mac": mac,
+        }
+    except Exception as e:
+        log(f"Error checking WiFi signal: {e}")
+        return {}
 
 
-def check_ram_usage(quiet: bool = False):
+def check_ram_usage(quiet: bool = False) -> dict:
     """Check and log RAM usage"""
     mem_alloc = gc_mem_alloc()
     mem_free = gc_mem_free()
@@ -81,6 +91,12 @@ def check_ram_usage(quiet: bool = False):
         log(f"    Allocated RAM.......: {mem_alloc // 1024:6d} Kb")
         log(f"    Lowest Free RAM.....: {lowest_ram_free // 1024:6d} Kb")
         log(f"    Max Allocated RAM...: {max_ram_usage // 1024:6d} Kb")
+    return {
+        "free": mem_free,
+        "allocated": mem_alloc,
+        "lowest_free": lowest_ram_free,
+        "max_allocated": max_ram_usage,
+    }
 
 
 # Define callback for successful connection
@@ -222,9 +238,25 @@ def print_stats_table(stats: dict):
     print(border())
 
 
-def print_client_stats(client: MQTTClient):
+def print_client_stats(client: MQTTClient) -> dict:
     stats = client.stats.get_stats()
-    return print_stats_table(stats)
+    print_stats_table(stats)
+    return stats
+
+
+async def publish_stats(client: MQTTClient, client_stats: dict, wifi_stats: dict, ram_stats: dict):
+    """Publish stats to the broker"""
+    stats = {
+        "client": client_stats,
+        "wifi": wifi_stats,
+        "ram": ram_stats,
+    }
+    message = json.dumps(stats, separators=(",", ":"))
+    log(f"Publishing stats: {message}")
+    ok = await client.publish("micropython/stats", message, qos=1)
+    if not ok:
+        log("[MAIN] Failed to publish stats")
+    return ok
 
 
 async def main():
@@ -243,17 +275,21 @@ async def main():
             periodic_publish_task = asyncio.create_task(periodic_publish(client, config))
             ram_loop = 0
             max_ram_loop = 5
+            client_stats = {}
+            ram_stats = {}
+            wifi_stats = {}
             while client.connected and not shutdown_requested:
                 await asyncio.sleep(1)
                 ram_loop += 1
                 if ram_loop >= max_ram_loop:
                     ram_loop = 0
                     quiet = False
-                    print_client_stats(client)
+                    client_stats = print_client_stats(client)
+                    await publish_stats(client, client_stats, wifi_stats, ram_stats)
                 else:
                     quiet = True
-                check_ram_usage(quiet=quiet)
-                check_wifi_signal(sta, quiet=quiet)
+                ram_stats = check_ram_usage(quiet=quiet)
+                wifi_stats = check_wifi_signal(sta, quiet=quiet)
             periodic_publish_task.cancel()
             try:
                 await periodic_publish_task

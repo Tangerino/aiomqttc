@@ -6,10 +6,11 @@ The format is based on [Keep a Changelog] and this project adheres to [Semantic 
 
 ## [Unreleased]
 
-## [1.0.2] - 2025-05-17
+## [1.0.3] - 2025-05-17
 
 ### Added
 
+- Enhance robustness on the `main()` application.
 - Add client statistics functionality to track the number of messages sent, received, and acknowledged.
     - Example
 
@@ -116,7 +117,8 @@ The format is based on [Keep a Changelog] and this project adheres to [Semantic 
 
 - Prevented multiple in-flight QoS 1 messages with conflicting PIDs.
 - Enhanced error handling for MQTT connection failures and timeouts.
--
+- Remove invalid `raise`
+- Fix PID generation being called twice.
 
 ## [1.0.1] - 2025-05-16
 

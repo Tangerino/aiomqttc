@@ -228,7 +228,7 @@ class StreamConnection:
             self.writer = writer
             self._eof = False
         except Exception as e:
-            raise ConnectionError(f"Failed to connect: {e}")
+            raise ValueError(f"StreamConnection:_connect. Failed to connect: {e}")
 
     async def reconnect(self, delay=1):
         await self.close()
