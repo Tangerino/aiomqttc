@@ -5,7 +5,7 @@ except ImportError:
     network = None
 
 
-def wifi(ssid: str, password: str) -> None:
+def wifi(ssid: str, password: str):
     if network is None:
         return
     sta_if = network.WLAN(network.STA_IF)
@@ -21,3 +21,4 @@ def wifi(ssid: str, password: str) -> None:
 
     print("Connected to WiFi network with IP address:", sta_if.ifconfig()[0])
     print(f"Signal strength: {sta_if.status('rssi')} dBm")
+    return sta_if

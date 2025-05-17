@@ -12,10 +12,9 @@ except ImportError:
         def print_exception(self, show_locals: bool = False):
             log("Console not available")
 
-
 console = Console()
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 
 # Determine if running on MicroPython
 _IS_MICROPYTHON = sys.implementation.name == "micropython"
@@ -31,6 +30,7 @@ if _IS_MICROPYTHON:
         def const(x):
             return x
 
+
         def hal_rtc():
             return None
 
@@ -39,18 +39,23 @@ if _IS_MICROPYTHON:
 else:
     from time import monotonic, gmtime
 
+
     def const(x):
         return x
+
 
     # Define platform-independent ticks functions
     def ticks_ms():
         return int(monotonic() * 1000)
 
+
     def ticks_diff(ticks1, ticks2):
         return ticks1 - ticks2
 
+
     def ticks_add(ticks1, ticks2):
         return ticks1 + ticks2
+
 
     def hal_rtc():
         return None
@@ -84,15 +89,15 @@ class RTC:
 
 class Datetime:
     def __init__(
-        self,
-        year: int = 0,
-        month: int = 0,
-        day: int = 0,
-        hour: int = 0,
-        minute: int = 0,
-        second: int = 0,
-        weekday: int = 0,
-        usec: int = 0,
+            self,
+            year: int = 0,
+            month: int = 0,
+            day: int = 0,
+            hour: int = 0,
+            minute: int = 0,
+            second: int = 0,
+            weekday: int = 0,
+            usec: int = 0,
     ):
         self.year: int = year
         self.month: int = month
@@ -137,7 +142,7 @@ def memory_dump(data, offset=0, length=None, header: str = ""):
     if length is None:
         length = len(data) - offset
     for i in range(offset, offset + length, 16):
-        line = " ".join("{:02x}".format(c) for c in data[i : i + 16])
+        line = " ".join("{:02x}".format(c) for c in data[i: i + 16])
         log("{:04d}: {}".format(i, line))
 
 
@@ -161,7 +166,7 @@ def _dump_array_aux(data, header, length):
     lines = []
     digits = 4 if isinstance(data, str) else 2
     for c in range(0, len(data), length):
-        chars = data[c : c + length]
+        chars = data[c: c + length]
         hex_string = " ".join("%0*x" % (digits, x) for x in chars)
         printable = "".join(f"{(x <= 127 and print_table[x]) or '.'}" for x in chars)
         lines.append("%04d  %-*s  %s\n" % (c, length * 3, hex_string, printable))
@@ -192,13 +197,13 @@ class StreamConnection:
 
     @classmethod
     async def open(
-        cls,
-        host,
-        port,
-        ssl=False,
-        timeout=None,
-        is_micropython: bool = False,
-        debug=False,
+            cls,
+            host,
+            port,
+            ssl=False,
+            timeout=None,
+            is_micropython: bool = False,
+            debug=False,
     ):
         self = cls(None, None, is_micropython, debug)
         self._host = host
@@ -209,8 +214,6 @@ class StreamConnection:
         return self
 
     async def _connect(self):
-        if self._debug:
-            print(f"Connecting to {self._host}:{self._port}")
         try:
             if self._timeout:
                 reader, writer = await asyncio.wait_for(
@@ -250,9 +253,7 @@ class StreamConnection:
                 return
             except Exception as e:
                 if attempt >= retries:
-                    raise TimeoutError(
-                        f"Write failed after {attempt + 1} attempts: {e}"
-                    )
+                    raise ValueError(f"Write failed after {attempt + 1} attempts: {e}")
                 attempt += 1
                 if self._debug:
                     print(f"Write failed, retrying ({attempt}/{retries})...")
@@ -286,7 +287,7 @@ class StreamConnection:
         idx = self._buffer.find(delimiter)
         if idx >= 0:
             result = self._buffer[: idx + len(delimiter)]
-            self._buffer = self._buffer[idx + len(delimiter) :]
+            self._buffer = self._buffer[idx + len(delimiter):]
             return bytes(result)
         else:
             result = self._buffer[:]
@@ -357,22 +358,25 @@ class MQTTProtocol:
         self._last_error_code = None
         self.timeout_sec = 10
         self.stream: StreamConnection = None
+        self._pending_pubacks = {}
+        self._ack_timeout_sec = 5  # seconds
+        # self._retry_task = asyncio.create_task(self._retry_pubacks_loop())
 
     async def connect(
-        self,
-        server,
-        port,
-        client_id,
-        user,
-        password,
-        keepalive,
-        ssl=False,
-        ssl_params=None,
-        timeout_sec=10,
+            self,
+            server,
+            port,
+            client_id,
+            user,
+            password,
+            keepalive,
+            ssl=False,
+            ssl_params=None,
+            timeout_sec=10,
     ):
         self.timeout_sec = timeout_sec
         try:
-            log(f"Connecting to {server}:{port}")
+            # log(f"MQTTProtocol:connect. Connecting to {server}:{port}")
             self.stream = await StreamConnection.open(
                 server,
                 port,
@@ -404,8 +408,8 @@ class MQTTProtocol:
             return {"success": True, "session_present": session_present}
 
         except Exception as e:
-            console.print_exception(show_locals=True)
-            log(f"Connection error: {e}")
+            # console.print_exception(show_locals=True)
+            log(f"MQTTProtocol:connect. Connection error: {e}")
             if self.stream:
                 await self.stream.close()
             raise
@@ -414,16 +418,37 @@ class MQTTProtocol:
         await self._send_packet(self.DISCONNECT, b"")
         await self.stream.close()
 
-    async def publish(self, topic, message, qos=0, retain=False, pid=None):
+    async def publish(self, topic, message, qos=0, retain=False, pid=None) -> bool:
+        """
+        Publishes a message to the given MQTT topic.
+
+        Args:
+            topic (str): The MQTT topic to publish to.
+            message (Union[str, bytes]): The message payload.
+            qos (int): Quality of Service level (0 or 1). Defaults to 0.
+            retain (bool): Whether the message should be retained by the broker.
+            pid (int, optional): Packet ID to use for the message. If None, a new ID is generated.
+
+        Returns:
+            bool: True if the message was acknowledged (for QoS 1) or sent (QoS 0),
+                  False if the PUBACK was not received in time (QoS 1 only).
+        """
         packet = bytearray()
         packet.extend(self._encode_string(topic))
 
         if qos > 0:
             pid = pid or self._get_packet_id()
             packet.extend(struct.pack("!H", pid))
+            self._pending_pubacks[pid] = (
+                ticks_ms(),
+                topic,
+                message,
+                qos,
+                retain,
+                False,  # not duplicate on first send
+            )
         else:
             pid = 0
-
         packet.extend(message)
 
         flags = qos << 1
@@ -432,7 +457,17 @@ class MQTTProtocol:
 
         await self._send_packet(self.PUBLISH | flags, packet)
 
-        return pid
+        if qos == 1:  # Wait for PUBACK manually
+            start = ticks_ms()
+            while True:
+                await asyncio.sleep(0.1)
+                if pid not in self._pending_pubacks:
+                    return True
+                if ticks_diff(ticks_ms(), start) > self._ack_timeout_sec * 1000:
+                    log(f"Timeout waiting for PUBACK for PID {pid}")
+                    self._pending_pubacks.pop(pid, None)
+                    return False
+        return True
 
     async def subscribe(self, topic, qos=0, timeout_sec=5):
         packet = bytearray()
@@ -494,11 +529,12 @@ class MQTTProtocol:
     async def ping(self):
         await self._send_packet(self.PINGREQ, b"")
 
-    async def handle_packet(self):
+    async def handle_packet(self) -> bool:
         try:
             resp = await self._read_packet()
             if not resp:
-                return
+                await asyncio.sleep(0.05)
+                return True
 
             packet_type, payload = resp
             self.client.last_rx = ticks_ms()
@@ -506,17 +542,18 @@ class MQTTProtocol:
             if packet_type == self.PINGRESP:
                 if self.client.on_ping:
                     elapsed = ticks_ms() - self.client.last_ping
+                    self.client.stats.ping_received(elapsed)
                     await self.client.on_ping(self, False, elapsed)
 
             elif packet_type & 0xF0 == self.PUBLISH:
                 qos = (packet_type & 0x06) >> 1
                 retain = packet_type & 0x01
                 topic_len = struct.unpack("!H", payload[:2])[0]
-                topic = payload[2 : 2 + topic_len].decode()
+                topic = payload[2: 2 + topic_len].decode()
                 offset = 2 + topic_len
 
                 if qos > 0:
-                    pid = struct.unpack("!H", payload[offset : offset + 2])[0]
+                    pid = struct.unpack("!H", payload[offset: offset + 2])[0]
                     offset += 2
                     if qos == 1:
                         await self._send_packet(self.PUBACK, struct.pack("!H", pid))
@@ -531,13 +568,14 @@ class MQTTProtocol:
                         cb(topic, msg_payload, retain)
 
                 if self.client.on_message:
+                    self.client.stats.receive(len(msg_payload))
                     await self.client.on_message(self, topic, msg_payload, retain)
 
             elif packet_type == self.PUBACK:
                 if len(payload) >= 2:
                     pid = struct.unpack("!H", payload[:2])[0]
                     log(f"PUBACK received for PID {pid}")
-                    # Aqui você pode marcar como entregue se desejar
+                    self._pending_pubacks.pop(pid, None)
 
             elif packet_type == self.SUBACK:
                 if len(payload) >= 3:
@@ -559,9 +597,13 @@ class MQTTProtocol:
 
         except asyncio.TimeoutError:
             log("Packet read timeout")
+            return False
+
         except Exception as e:
             console.print_exception()
             log(f"Unhandled exception in handle_packet: {e}")
+            return False
+        return True
 
     async def _read_packet(self):
         header = await self.stream.buffered_read(1)
@@ -647,6 +689,7 @@ class MQTTProtocol:
         self.pid = (self.pid + 1) % 65535
         if self.pid == 0:
             self.pid = 1
+        # log(f"Generated new packet ID: {self.pid}")
         return self.pid
 
     def get_error_message(self, error_code):
@@ -661,19 +704,145 @@ class MQTTProtocol:
             await self.stream.close()
             self.stream = None
 
+    async def _retry_pubacks_loop(self):
+        RETRY_INTERVAL = 2_000  # ms
+        while True:
+            await asyncio.sleep(1)
+            now = ticks_ms()
+            for pid, (ts, topic, message, qos, retain, dup) in list(self._pending_pubacks.items()):
+                if ticks_diff(now, ts) > RETRY_INTERVAL:
+                    log(f"Retrying QoS 1 message PID {pid} (dup={dup})")
+                    try:
+                        await self._resend_qos1(pid, topic, message, qos, retain, dup=True)
+                        self._pending_pubacks[pid] = (
+                            ticks_ms(),
+                            topic,
+                            message,
+                            qos,
+                            retain,
+                            True,
+                        )
+                    except Exception as e:
+                        log(f"Retry failed for PID {pid}: {e}")
+
+    async def _resend_qos1(self, pid, topic, message, qos, retain, dup=False):
+        packet = bytearray()
+        packet.extend(self._encode_string(topic))
+        packet.extend(struct.pack("!H", pid))
+        packet.extend(message)
+
+        flags = qos << 1
+        if retain:
+            flags |= 1
+        if dup:
+            flags |= 0x08  # DUP flag for resend
+
+        await self._send_packet(self.PUBLISH | flags, packet)
+
+
+class MqttStats:
+    def __init__(self):
+        self.packets_sent = 0
+        self.packets_received = 0
+        self.bytes_sent = 0
+        self.bytes_received = 0
+        self.max_list_size = 10
+        self.pub_ok_count = 0
+        self.pub_fail_count = 0
+        self.pub_rtt_ms_list = []
+        self.pub_package_size_list = []
+        self.sub_package_size_list = []
+        self.ping_rtt_ms_list = []
+        self.connections_sent = 0
+        self.connections_failed = 0
+        self.ping_sent_count = 0
+        self.ping_received_count = 0
+        self.ping_rtt_ms_list = []
+
+    def publish(self, status, rtt_ms, packet_size: int):
+        self.packets_sent += 1
+        if status:
+            self.pub_ok_count += 1
+        else:
+            self.pub_fail_count += 1
+        if len(self.pub_rtt_ms_list) >= self.max_list_size:
+            self.pub_rtt_ms_list.pop(0)
+        self.pub_rtt_ms_list.append(rtt_ms)
+        self.bytes_sent += packet_size
+        if len(self.pub_package_size_list) >= self.max_list_size:
+            self.pub_package_size_list.pop(0)
+        self.pub_package_size_list.append(packet_size)
+
+    def receive(self, packet_size: int):
+        self.packets_received += 1
+        self.bytes_received += packet_size
+        if len(self.sub_package_size_list) >= self.max_list_size:
+            self.sub_package_size_list.pop(0)
+        self.sub_package_size_list.append(packet_size)
+
+    def connect(self):
+        self.connections_sent += 1
+
+    def connect_fail(self):
+        self.connections_failed += 1
+
+    def ping_sent(self):
+        self.ping_sent_count += 1
+
+    def ping_received(self, rtt_ms):
+        self.ping_received_count += 1
+        if len(self.ping_rtt_ms_list) >= self.max_list_size:
+            self.ping_rtt_ms_list.pop(0)
+        self.ping_rtt_ms_list.append(rtt_ms)
+
+    def reset(self):
+        self.packets_sent = 0
+        self.packets_received = 0
+        self.bytes_sent = 0
+        self.bytes_received = 0
+        self.pub_ok_count = 0
+        self.pub_fail_count = 0
+        self.pub_rtt_ms_list.clear()
+        self.pub_package_size_list.clear()
+        self.sub_package_size_list.clear()
+        self.ping_rtt_ms_list.clear()
+
+    def get_stats(self):
+        # add some stats aggregation
+        pub_rtt_ms = sum(self.pub_rtt_ms_list) / len(self.pub_rtt_ms_list) if self.pub_rtt_ms_list else 0
+        pub_package_size = sum(self.pub_package_size_list) / len(self.pub_package_size_list) if self.pub_package_size_list else 0
+        sub_package_size = sum(self.sub_package_size_list) / len(self.sub_package_size_list) if self.sub_package_size_list else 0
+        ping_rtt_ms = sum(self.ping_rtt_ms_list) / len(self.ping_rtt_ms_list) if self.ping_rtt_ms_list else 0
+        return {
+            "packets_sent": self.packets_sent,
+            "packets_received": self.packets_received,
+            "bytes_sent": self.bytes_sent,
+            "bytes_received": self.bytes_received,
+            "pub_ok_count": self.pub_ok_count,
+            "pub_fail_count": self.pub_fail_count,
+            "pub_rtt_ms": int(pub_rtt_ms),
+            "pub_package_avg_size": int(pub_package_size),
+            "sub_package_avg_size": int(sub_package_size),
+            "connections_sent": self.connections_sent,
+            "connections_failed": self.connections_failed,
+            "ping_sent_count": self.ping_sent_count,
+            "ping_received_count": self.ping_received_count,
+            "ping_rtt_ms": int(ping_rtt_ms)
+        }
+
 
 class MQTTClient:
     def __init__(
-        self,
-        client_id=None,
-        server=None,
-        port=1883,
-        user=None,
-        password=None,
-        keepalive=60,
-        ssl=False,
-        ssl_params=None,
-        verbose: int = 0,
+            self,
+            client_id=None,
+            server=None,
+            port=1883,
+            user=None,
+            password=None,
+            keepalive=60,
+            ssl=False,
+            ssl_params=None,
+            verbose: int = 0,
     ):
         self.client_id = (
             client_id if client_id and len(client_id) >= 2 else generate_client_id()
@@ -704,7 +873,7 @@ class MQTTClient:
 
         self._ping_task = None
         self._receive_task = None
-
+        self.stats: MqttStats = MqttStats()
         self.protocol = MQTTProtocol(self)
 
     async def connect(self, timeout_sec: int = 10):
@@ -712,20 +881,26 @@ class MQTTClient:
             return True
 
         try:
-            log(f"Connecting to {self.server}:{self.port}")
-            result = await self.protocol.connect(
-                self.server,
-                self.port,
-                self.client_id,
-                self.user,
-                self.password,
-                self.keepalive,
-                self.ssl,
-                self.ssl_params,
-                timeout_sec,
-            )
+            log(f"MQTTClient:connect. Connecting to {self.server}:{self.port}")
+            self.stats.connect()
+            try:
+                result = await self.protocol.connect(
+                    self.server,
+                    self.port,
+                    self.client_id,
+                    self.user,
+                    self.password,
+                    self.keepalive,
+                    self.ssl,
+                    self.ssl_params,
+                    timeout_sec,
+                )
+            except Exception as e:
+                log(f"Failed to connect to {self.server}:{self.port}: {e}")
+                result = False
 
             if not result:
+                self.stats.connect_fail()
                 return False
 
             self.connected = True
@@ -743,11 +918,11 @@ class MQTTClient:
 
         except asyncio.TimeoutError:
             log("Connection timeout")
-            await self._handle_disconnect()
+            await self.handle_disconnect()
         except Exception as e:
             log(f"Connection failed: {e}")
-            await self._handle_disconnect()
-
+            await self.handle_disconnect()
+        self.stats.connect_fail()
         return False
 
     async def disconnect(self):
@@ -759,24 +934,31 @@ class MQTTClient:
                 log(f"Error disconnecting: {e}")
             finally:
                 self.connected = False
-                await self._handle_disconnect()
+                await self.handle_disconnect()
 
     async def publish(self, topic, message, qos=1, retain=False):
         if not self.connected:
             if not await self.connect():
-                raise Exception("Not connected")
+                log("Client not connected, publish skipped")
+                return False
 
         if isinstance(message, str):
             message = message.encode()
 
         try:
-            pid = self.protocol._get_packet_id()
-            await self.protocol.publish(topic, message, qos, retain, pid)
-            log(f"Published message to {topic} with PID {pid}")
-            return pid
+            tt = ticks_ms()
+            success = await self.protocol.publish(topic, message, qos, retain)
+            elapsed = ticks_diff(ticks_ms(), tt)
+            if not success:
+                log(f"Publish failed for topic {topic}. No PUBACK received.")
+                self.stats.publish(False, elapsed, len(message))
+            else:
+                # log(f"Published message to {topic} with PID {pid} in {elapsed}ms")
+                self.stats.publish(True, elapsed, len(message))
+            return success
         except Exception as e:
             log(f"Publish error: {e}")
-            await self._handle_disconnect()
+            await self.handle_disconnect()
             return None
 
     async def subscribe(self, topic, qos=0):
@@ -821,25 +1003,33 @@ class MQTTClient:
                     await self.protocol.ping()
                     self.last_ping = now
                     if self.on_ping:
+                        self.stats.ping_sent()
                         await self.on_ping(self, True, 0)
                 except Exception as e:
                     log(f"Ping error: {e}")
-                    await self._handle_disconnect()
+                    await self.handle_disconnect()
                     break
 
             if ticks_diff(now, self.last_rx) > self.keepalive * 1000 * 1.5:
                 log("Server timeout, reconnecting")
-                await self._handle_disconnect()
+                await self.handle_disconnect()
                 break
 
             await asyncio.sleep(1)
         log("Keep-alive loop stopped")
 
+    def mark_disconnected(self):
+        self.connected = False
+
     async def _receive_loop(self):
         log("Starting receive loop")
         while self.connected:
             try:
-                await self.protocol.handle_packet()
+                ok = await self.protocol.handle_packet()
+                if not ok:
+                    log("Receive error, stopping loop")
+                    self.mark_disconnected()
+                    break
             except asyncio.TimeoutError:
                 if not self.connected:
                     break
@@ -847,11 +1037,11 @@ class MQTTClient:
             except Exception as e:
                 console.print_exception()
                 log(f"Receive error: {type(e)}")
-                await self._handle_disconnect()
+                await self.handle_disconnect()
                 break
         log("Receive loop stopped")
 
-    async def _handle_disconnect(self, return_code=None):
+    async def handle_disconnect(self, return_code=None):
         was_connected = self.connected
         self.connected = False
 
@@ -888,7 +1078,7 @@ class MQTTClient:
             log("Disconnected from broker")
 
         should_reconnect = was_connected or (
-            return_code and return_code in self.protocol.RECONNECTABLE_ERRORS
+                return_code and return_code in self.protocol.RECONNECTABLE_ERRORS
         )
         if should_reconnect:
             asyncio.create_task(self._reconnect())
