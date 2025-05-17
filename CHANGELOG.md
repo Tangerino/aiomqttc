@@ -9,7 +9,26 @@ The format is based on [Keep a Changelog] and this project adheres to [Semantic 
 ## [1.0.3] - 2025-05-17
 
 ### Added
-
+- Device send statistics to track the number of messages sent, received, and acknowledged, etc.
+  - We can subscribe to the `micropython/stats` topic to receive the statistics.
+  - To display the statistics in a nice way in the terminal, use:
+    ```bash
+     mosquitto_sub \
+    --host <host> \
+    --port <port> \
+    -u <username> -P <password> \
+    -t micropython/stats -q 1 |
+    while read -r line; do
+      date
+      echo "$line" | jq -r '
+        to_entries[] |
+        .key as $section |
+        .value | to_entries | sort_by(.key)[] |
+        "\($section) | \(.key) | \(.value)"
+      ' | column -t -s '|'
+      echo
+    done
+    ```
 - Enhance robustness on the `main()` application.
 - Add client statistics functionality to track the number of messages sent, received, and acknowledged.
     - Example
