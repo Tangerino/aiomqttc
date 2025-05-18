@@ -6,3 +6,4 @@ requires-python = ">=3.11"
 dependencies = [
     "rich>=14.0.0",
 ]
+py_modules = ["aiomqttc", "main", "wifi", "config"]
