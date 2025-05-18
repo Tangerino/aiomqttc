@@ -888,16 +888,19 @@ class MQTTClient:
             log(f"MQTTClient:connect. Connecting to {self.server}:{self.port}")
             self.stats.connect()
             try:
-                result = await self.protocol.connect(
-                    self.server,
-                    self.port,
-                    self.client_id,
-                    self.user,
-                    self.password,
-                    self.keepalive,
-                    self.ssl,
-                    self.ssl_params,
-                    timeout_sec,
+                result = await asyncio.wait_for(
+                    self.protocol.connect(
+                        self.server,
+                        self.port,
+                        self.client_id,
+                        self.user,
+                        self.password,
+                        self.keepalive,
+                        self.ssl,
+                        self.ssl_params,
+                        timeout_sec,
+                    ),
+                    timeout=timeout_sec
                 )
             except Exception as e:
                 log(f"Failed to connect to {self.server}:{self.port}: {e}")
