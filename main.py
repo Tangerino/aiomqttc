@@ -21,13 +21,14 @@ except ImportError:
     # For platforms that don't support signal (like MicroPython)
     signal = None
 
-from aiomqttc import MQTTClient, log, _IS_MICROPYTHON
+from aiomqttc import MQTTClient, log, _IS_MICROPYTHON, MqttStats
 
 # Flag to indicate shutdown
 shutdown_requested = False
 lowest_ram_free = None
 max_ram_usage = 0
 lowest_wifi_signal = None
+mqtt_stats: MqttStats = MqttStats()
 
 boot_time = time()
 
@@ -161,22 +162,17 @@ async def register_signal_handlers():
             log("Warning: Signal handlers not fully supported on this platform.")
 
 
-async def periodic_publish(client: MQTTClient, config: Config):
+async def periodic_publish(client: MQTTClient, last_pub_ts: int, pub_freq_sec: int = 1):
     """Publish a message periodically"""
-    log("Starting periodic publish task...")
-    count = 0
-    while not shutdown_requested:
-        count += 1
-        message = f"Periodic message #{count} from MicroPython"
-        # log(f"Publishing: {message}")
+    ok = True
+    if time() - last_pub_ts >= pub_freq_sec:
+        message = f"Periodic message #{last_pub_ts} from MicroPython"
         ok = await client.publish("micropython/test", message, qos=1)
-        if not ok:
-            log("[MAIN] Failed to publish message")
-        await asyncio.sleep(1)
-    log("Periodic publish task stopped.")
+        last_pub_ts = time()
+    return last_pub_ts, ok
 
 
-async def client_connect(config: Config) -> MQTTClient:
+async def client_connect(config: Config, stats: MqttStats) -> MQTTClient:
     server = config.mqtt_broker
     client_id = f"esp32_client_{random.randint(1000, 9999)}"
     port = config.mqtt_port
@@ -195,6 +191,7 @@ async def client_connect(config: Config) -> MQTTClient:
         password=password,
         port=port,
         verbose=verbose,
+        stats=stats,
     )
     # ================
     client.on_message = on_message
@@ -261,6 +258,7 @@ def print_client_stats(client: MQTTClient) -> dict:
 
 async def publish_stats(client: MQTTClient, client_stats: dict, wifi_stats: dict, ram_stats: dict, uptime_stats: dict):
     """Publish stats to the broker"""
+    client_stats["_id"] = client.client_id
     stats = {
         "client": client_stats,
         "wifi": wifi_stats,
@@ -268,7 +266,6 @@ async def publish_stats(client: MQTTClient, client_stats: dict, wifi_stats: dict
         "uptime": uptime_stats,
     }
     message = json.dumps(stats, separators=(",", ":"))
-    log(f"Publishing stats: {message}")
     ok = await client.publish("micropython/stats", message, qos=1)
     if not ok:
         log("[MAIN] Failed to publish stats")
@@ -285,10 +282,11 @@ async def main():
     log("Running... (Press Ctrl+C to exit)")
     global shutdown_requested
     check_ram_usage(quiet=True)
+    last_put_ts = time()
+    pub_freq_sec = 1
     try:
         while not shutdown_requested:
-            client = await client_connect(config)
-            periodic_publish_task = asyncio.create_task(periodic_publish(client, config))
+            client = await client_connect(config, mqtt_stats)
             ram_loop = 0
             max_ram_loop = 5
             uptime_stats = {}
@@ -296,6 +294,10 @@ async def main():
             wifi_stats = {}
             while client.connected and not shutdown_requested:
                 await asyncio.sleep(1)
+                last_put_ts, ok = await periodic_publish(client, last_put_ts, pub_freq_sec)
+                if not ok:
+                    log("[MAIN] Failed to publish periodic message")
+                    break
                 ram_loop += 1
                 if ram_loop >= max_ram_loop:
                     ram_loop = 0
@@ -307,11 +309,6 @@ async def main():
                 ram_stats = check_ram_usage(quiet=quiet)
                 wifi_stats = check_wifi_signal(sta, quiet=quiet)
                 uptime_stats = get_uptime()
-            periodic_publish_task.cancel()
-            try:
-                await periodic_publish_task
-            except asyncio.CancelledError:
-                log("Periodic publish task cancelled.")
             log("Disconnected from broker, stopping periodic publish task.")
             await client.disconnect()
             if not shutdown_requested:

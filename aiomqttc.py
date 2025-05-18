@@ -324,6 +324,97 @@ class StreamConnection:
         await self.close()
 
 
+class MqttStats:
+    def __init__(self):
+        self.packets_sent = 0
+        self.packets_received = 0
+        self.bytes_sent = 0
+        self.bytes_received = 0
+        self.max_list_size = 10
+        self.pub_ok_count = 0
+        self.pub_fail_count = 0
+        self.pub_rtt_ms_list = []
+        self.pub_package_size_list = []
+        self.sub_package_size_list = []
+        self.ping_rtt_ms_list = []
+        self.connections_sent = 0
+        self.connections_failed = 0
+        self.ping_sent_count = 0
+        self.ping_received_count = 0
+        self.ping_rtt_ms_list = []
+
+    def publish(self, status, rtt_ms, packet_size: int):
+        self.packets_sent += 1
+        if status:
+            self.pub_ok_count += 1
+        else:
+            self.pub_fail_count += 1
+        if len(self.pub_rtt_ms_list) >= self.max_list_size:
+            self.pub_rtt_ms_list.pop(0)
+        self.pub_rtt_ms_list.append(rtt_ms)
+        self.bytes_sent += packet_size
+        if len(self.pub_package_size_list) >= self.max_list_size:
+            self.pub_package_size_list.pop(0)
+        self.pub_package_size_list.append(packet_size)
+
+    def receive(self, packet_size: int):
+        self.packets_received += 1
+        self.bytes_received += packet_size
+        if len(self.sub_package_size_list) >= self.max_list_size:
+            self.sub_package_size_list.pop(0)
+        self.sub_package_size_list.append(packet_size)
+
+    def connect(self):
+        self.connections_sent += 1
+
+    def connect_fail(self):
+        self.connections_failed += 1
+
+    def ping_sent(self):
+        self.ping_sent_count += 1
+
+    def ping_received(self, rtt_ms):
+        self.ping_received_count += 1
+        if len(self.ping_rtt_ms_list) >= self.max_list_size:
+            self.ping_rtt_ms_list.pop(0)
+        self.ping_rtt_ms_list.append(rtt_ms)
+
+    def reset(self):
+        self.packets_sent = 0
+        self.packets_received = 0
+        self.bytes_sent = 0
+        self.bytes_received = 0
+        self.pub_ok_count = 0
+        self.pub_fail_count = 0
+        self.pub_rtt_ms_list.clear()
+        self.pub_package_size_list.clear()
+        self.sub_package_size_list.clear()
+        self.ping_rtt_ms_list.clear()
+
+    def get_stats(self):
+        # add some stats aggregation
+        pub_rtt_ms = sum(self.pub_rtt_ms_list) / len(self.pub_rtt_ms_list) if self.pub_rtt_ms_list else 0
+        pub_package_size = sum(self.pub_package_size_list) / len(self.pub_package_size_list) if self.pub_package_size_list else 0
+        sub_package_size = sum(self.sub_package_size_list) / len(self.sub_package_size_list) if self.sub_package_size_list else 0
+        ping_rtt_ms = sum(self.ping_rtt_ms_list) / len(self.ping_rtt_ms_list) if self.ping_rtt_ms_list else 0
+        return {
+            "packets_sent": self.packets_sent,
+            "packets_received": self.packets_received,
+            "bytes_sent": self.bytes_sent,
+            "bytes_received": self.bytes_received,
+            "pub_ok_count": self.pub_ok_count,
+            "pub_fail_count": self.pub_fail_count,
+            "pub_rtt_ms": int(pub_rtt_ms),
+            "pub_package_avg_size": int(pub_package_size),
+            "sub_package_avg_size": int(sub_package_size),
+            "connections_sent": self.connections_sent,
+            "connections_failed": self.connections_failed,
+            "ping_sent_count": self.ping_sent_count,
+            "ping_received_count": self.ping_received_count,
+            "ping_rtt_ms": int(ping_rtt_ms)
+        }
+
+
 class MQTTProtocol:
     CONNECT = 0x10
     CONNACK = 0x20
@@ -740,97 +831,6 @@ class MQTTProtocol:
         await self._send_packet(self.PUBLISH | flags, packet)
 
 
-class MqttStats:
-    def __init__(self):
-        self.packets_sent = 0
-        self.packets_received = 0
-        self.bytes_sent = 0
-        self.bytes_received = 0
-        self.max_list_size = 10
-        self.pub_ok_count = 0
-        self.pub_fail_count = 0
-        self.pub_rtt_ms_list = []
-        self.pub_package_size_list = []
-        self.sub_package_size_list = []
-        self.ping_rtt_ms_list = []
-        self.connections_sent = 0
-        self.connections_failed = 0
-        self.ping_sent_count = 0
-        self.ping_received_count = 0
-        self.ping_rtt_ms_list = []
-
-    def publish(self, status, rtt_ms, packet_size: int):
-        self.packets_sent += 1
-        if status:
-            self.pub_ok_count += 1
-        else:
-            self.pub_fail_count += 1
-        if len(self.pub_rtt_ms_list) >= self.max_list_size:
-            self.pub_rtt_ms_list.pop(0)
-        self.pub_rtt_ms_list.append(rtt_ms)
-        self.bytes_sent += packet_size
-        if len(self.pub_package_size_list) >= self.max_list_size:
-            self.pub_package_size_list.pop(0)
-        self.pub_package_size_list.append(packet_size)
-
-    def receive(self, packet_size: int):
-        self.packets_received += 1
-        self.bytes_received += packet_size
-        if len(self.sub_package_size_list) >= self.max_list_size:
-            self.sub_package_size_list.pop(0)
-        self.sub_package_size_list.append(packet_size)
-
-    def connect(self):
-        self.connections_sent += 1
-
-    def connect_fail(self):
-        self.connections_failed += 1
-
-    def ping_sent(self):
-        self.ping_sent_count += 1
-
-    def ping_received(self, rtt_ms):
-        self.ping_received_count += 1
-        if len(self.ping_rtt_ms_list) >= self.max_list_size:
-            self.ping_rtt_ms_list.pop(0)
-        self.ping_rtt_ms_list.append(rtt_ms)
-
-    def reset(self):
-        self.packets_sent = 0
-        self.packets_received = 0
-        self.bytes_sent = 0
-        self.bytes_received = 0
-        self.pub_ok_count = 0
-        self.pub_fail_count = 0
-        self.pub_rtt_ms_list.clear()
-        self.pub_package_size_list.clear()
-        self.sub_package_size_list.clear()
-        self.ping_rtt_ms_list.clear()
-
-    def get_stats(self):
-        # add some stats aggregation
-        pub_rtt_ms = sum(self.pub_rtt_ms_list) / len(self.pub_rtt_ms_list) if self.pub_rtt_ms_list else 0
-        pub_package_size = sum(self.pub_package_size_list) / len(self.pub_package_size_list) if self.pub_package_size_list else 0
-        sub_package_size = sum(self.sub_package_size_list) / len(self.sub_package_size_list) if self.sub_package_size_list else 0
-        ping_rtt_ms = sum(self.ping_rtt_ms_list) / len(self.ping_rtt_ms_list) if self.ping_rtt_ms_list else 0
-        return {
-            "packets_sent": self.packets_sent,
-            "packets_received": self.packets_received,
-            "bytes_sent": self.bytes_sent,
-            "bytes_received": self.bytes_received,
-            "pub_ok_count": self.pub_ok_count,
-            "pub_fail_count": self.pub_fail_count,
-            "pub_rtt_ms": int(pub_rtt_ms),
-            "pub_package_avg_size": int(pub_package_size),
-            "sub_package_avg_size": int(sub_package_size),
-            "connections_sent": self.connections_sent,
-            "connections_failed": self.connections_failed,
-            "ping_sent_count": self.ping_sent_count,
-            "ping_received_count": self.ping_received_count,
-            "ping_rtt_ms": int(ping_rtt_ms)
-        }
-
-
 class MQTTClient:
     def __init__(
             self,
@@ -843,6 +843,7 @@ class MQTTClient:
             ssl=False,
             ssl_params=None,
             verbose: int = 0,
+            stats: MqttStats = None,
     ):
         self.client_id = (
             client_id if client_id and len(client_id) >= 2 else generate_client_id()
@@ -873,7 +874,7 @@ class MQTTClient:
 
         self._ping_task = None
         self._receive_task = None
-        self.stats: MqttStats = MqttStats()
+        self.stats: MqttStats = stats or MqttStats()
         self.protocol = MQTTProtocol(self)
 
     async def connect(self, timeout_sec: int = 10):
@@ -1012,7 +1013,7 @@ class MQTTClient:
 
             if ticks_diff(now, self.last_rx) > self.keepalive * 1000 * 1.5:
                 log("Server timeout, reconnecting")
-                await self.handle_disconnect()
+                self.connected = False
                 break
 
             await asyncio.sleep(1)
