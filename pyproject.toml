@@ -1,7 +1,10 @@
 [project]
 name = "aiomqttc"
-version = "0.1.0"
-description = "Add your description here"
+version = "1.0.3"
+authors = [
+    { name = "Carlos Tangerino", email = "carlos.tangerino@gmail.com" }
+]
+description = "aiomqttc - Asynchronous MQTT Client"
 requires-python = ">=3.11"
 dependencies = [
     "rich>=14.0.0",
