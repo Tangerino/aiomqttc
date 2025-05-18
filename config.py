@@ -2,7 +2,25 @@ import json
 
 
 class Config:
+    """
+    Configuration manager for Wi-Fi and MQTT settings.
+
+    This class handles loading and saving configuration data from/to a `config.json` file.
+    It stores Wi-Fi credentials and MQTT broker settings used by the application.
+
+    Attributes:
+        wifi_ssid (str): SSID of the Wi-Fi network.
+        wifi_password (str): Password for the Wi-Fi network.
+        mqtt_broker (str): Hostname or IP of the MQTT broker.
+        mqtt_port (int): Port number of the MQTT broker.
+        mqtt_username (str): Username for MQTT authentication.
+        mqtt_password (str): Password for MQTT authentication.
+        mqtt_tls (bool): Whether to use TLS for MQTT connection.
+    """
     def __init__(self):
+        """
+        Initialize the Config object with default (empty) values.
+        """
         self.wifi_ssid = ""
         self.wifi_password = ""
         self.mqtt_broker = ""
@@ -11,7 +29,17 @@ class Config:
         self.mqtt_password = ""
         self.mqtt_tls = False
 
+    def __repr__(self):
+        return f"mqtt_broker={self.mqtt_broker}, mqtt_port={self.mqtt_port})"
+
     def load(self):
+        """
+        Load configuration from 'config.json'. If the file is missing or invalid,
+        default values are kept and a new config file is created with these defaults.
+
+        Returns:
+            Config: The current instance (self) for chaining.
+        """
         try:
             with open("config.json", "r") as config_file:
                 config = json.load(config_file)
@@ -27,8 +55,17 @@ class Config:
         except Exception as e:
             print(f"Error reading config file: {e}")
             self.save()
+        return self
 
     def save(self):
+        """
+        Save the current configuration to 'config.json'.
+
+        If the file already exists, it will be overwritten.
+
+        Returns:
+            dict: The configuration dictionary that was written to the file.
+        """
         config = {
             "wifi": {"ssid": self.wifi_ssid, "password": self.wifi_password},
             "mqtt": {

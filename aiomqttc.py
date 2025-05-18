@@ -14,7 +14,7 @@ except ImportError:
 
 console = Console()
 
-__version__ = "1.0.2"
+__version__ = "1.0.3"
 
 # Determine if running on MicroPython
 _IS_MICROPYTHON = sys.implementation.name == "micropython"
@@ -877,6 +877,9 @@ class MQTTClient:
         self.stats: MqttStats = stats or MqttStats()
         self.protocol = MQTTProtocol(self)
 
+    def __repr__(self):
+        return f"MQTTClient(client_id={self.client_id}, server={self.server}, port={self.port})"
+
     async def connect(self, timeout_sec: int = 10):
         if self.connected:
             return True
@@ -934,8 +937,10 @@ class MQTTClient:
             except Exception as e:
                 log(f"Error disconnecting: {e}")
             finally:
-                self.connected = False
-                await self.handle_disconnect()
+                try:
+                    await self.handle_disconnect()
+                except Exception as e:
+                    log(f"Error in handle_disconnect: {e}")
 
     async def publish(self, topic, message, qos=1, retain=False):
         if not self.connected:
@@ -987,10 +992,6 @@ class MQTTClient:
         self.subscriptions.pop(topic, None)
         log(f"Unsubscribe request sent for topic {topic} with PID {pid}")
 
-    def reconnect_delay_set(self, min_delay=1, max_delay=10):
-        self.reconnect_interval = min_delay
-        self.max_reconnect_interval = max_delay
-
     def get_last_error(self):
         return self.protocol.get_error_message(self._last_error_code)
 
@@ -1013,7 +1014,7 @@ class MQTTClient:
 
             if ticks_diff(now, self.last_rx) > self.keepalive * 1000 * 1.5:
                 log("Server timeout, reconnecting")
-                self.connected = False
+                self.mark_disconnected()
                 break
 
             await asyncio.sleep(1)
