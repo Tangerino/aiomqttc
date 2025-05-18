@@ -23,35 +23,39 @@ Tested on:
 
 ### For Python environments:
 
-#### Using pip
-
-```bash
-pip install aiomqttc
-```
-
 ## Install UV if you don't have it yet
 
+```bash
 curl -sSf https://install.ultraviolet.rs | sh
+```
 
-## Create a virtual environment (optional)
-
-uv venv # creates .venv in current directory
-
-## Activate the virtual environment
-
-source .venv/bin/activate # On Unix/macOS
-
-## or
-
-.venv\Scripts\activate # On Windows
+## Clone the repository
+```bash
+git clone https://github.com/Tangerino/aiomqttc.git
+cd aiomqttc
+```
 
 ## Install the package
+```bash
+uv venv && uv pip install -e .
+```
 
-uv pip install aiomqttc
+## Run the example
+```bash
+uv run main.py
+2025-05-18 08:53:34.922 Stating aiomqttc example
+Error reading config file: [Errno 2] No such file or directory: 'config.json'
+Config file created with default values.
+2025-05-18 08:53:34.923 Running... (Press Ctrl+C to exit)
+2025-05-18 08:53:34.923 Connecting to broker...
+2025-05-18 08:53:34.923 MQTTClient:connect. Connecting to :0
+```
+
+- ⚠️ Remember to configure the `config.json` file with your MQTT broker details.
 
 ## For MicroPython environments:
 
-Copy aiomqttc.py to your device
+Copy `aiomqttc.py` to your device
 
 ## Configuration
 
