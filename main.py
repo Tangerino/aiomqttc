@@ -12,16 +12,9 @@ import json
 import random
 from time import time
 
+from aiomqttc import MQTTClient, log, MqttStats
 from config import Config
 from wifi import wifi
-
-try:
-    import signal
-except ImportError:
-    # For platforms that don't support signal (like MicroPython)
-    signal = None
-
-from aiomqttc import MQTTClient, log, _IS_MICROPYTHON, MqttStats
 
 # Flag to indicate shutdown
 shutdown_requested = False
@@ -180,31 +173,6 @@ async def on_disconnect(client, return_code):
         log("Disconnected")
 
 
-# Signal handler for graceful shutdown
-def signal_handler():
-    global shutdown_requested
-    log("Shutdown requested, closing MQTT client...")
-    shutdown_requested = True
-
-
-# Register signal handler
-async def register_signal_handlers():
-    if _IS_MICROPYTHON:
-        # MicroPython does not support signal handlers
-        log(
-            "Signal handlers are not supported in MicroPython. Using KeyboardInterrupt fallback."
-        )
-        return
-    loop = asyncio.get_running_loop()
-
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(sig, signal_handler)
-        except NotImplementedError:
-            # For systems where add_signal_handler is not implemented (e.g., Windows)
-            log("Warning: Signal handlers not fully supported on this platform.")
-
-
 async def periodic_publish(client: MQTTClient, last_pub_ts: int, pub_freq_sec: int = 1):
     """Publish a message periodically"""
     ok = True
@@ -340,72 +308,104 @@ async def publish_stats(client: MQTTClient, sta, put_stats_last_ts: int, pub_sta
     return time(), ok
 
 
-async def main():
+async def mqtt_thread(config: Config, sta):
     """
-    Entry point for the asynchronous MQTT telemetry example.
+    Background task that manages MQTT connection and periodic telemetry publishing.
 
-    This function initializes system state, sets up Wi-Fi and configuration, connects to an MQTT broker,
-    and continuously publishes periodic messages and system statistics until shutdown is requested.
+    This coroutine runs in a loop and performs the following:
+        1. Establishes an MQTT connection using configuration parameters.
+        2. Publishes periodic messages at `pub_freq_sec` intervals (e.g., heartbeat).
+        3. Publishes system statistics (RAM, Wi-Fi, uptime, client stats) at `pub_stats_sec` intervals.
+        4. Handles automatic reconnection if the broker is unreachable or the connection drops.
+        5. Logs all major steps and any publishing failures.
 
-    Flow:
-        1. Logs memory usage at start.
-        2. Loads configuration and establishes Wi-Fi connection.
-        3. Enters a main loop that:
-            - Connects to the MQTT broker using `client_connect()`.
-            - Periodically publishes:
-                - Generic heartbeat message via `periodic_publish()`.
-                - System statistics via `publish_stats()`.
-            - Handles reconnection logic and graceful shutdown on disconnect or `KeyboardInterrupt`.
+    Args:
+        config (Config): Configuration object containing MQTT and Wi-Fi credentials.
+        sta: Wi-Fi interface object (e.g., `network.WLAN(STA_IF)`).
 
-    Global State:
-        - Uses `shutdown_requested` to control termination across signal handlers and main loop.
+    Globals:
+        shutdown_requested (bool): A flag used to gracefully terminate the task.
 
-    Notes:
-        - Publishes stats every `pub_stats_freq` seconds.
-        - Publishes periodic messages every `pub_freq_sec` seconds.
-        - Attempts reconnection 5 seconds after a disconnect unless shutdown is requested.
+    Variables:
+        last_put_ts (int): Timestamp of last successful periodic message (e.g., heartbeat).
+        pub_freq_sec (int): Frequency in seconds for periodic messages.
+        pub_stats_sec (int): Frequency in seconds for publishing system statistics.
+        put_stats_last_ts (int): Timestamp of last stats publish.
 
-    Exceptions:
-        - Gracefully catches `KeyboardInterrupt` and attempts client disconnect before exit.
+    Behavior:
+        - If the MQTT connection fails or is lost, it waits 5 seconds before retrying.
+        - Errors in the loop are caught and logged, and the loop resumes after a brief pause.
+
+    Example:
+        This function is typically run in the background using:
+            asyncio.create_task(mqtt_thread(config, sta))
+
     """
-    check_ram_usage()
-    log("Stating aiomqttc example")
-    await register_signal_handlers()
-    config = Config().load()
-    sta = wifi(config.wifi_ssid, config.wifi_password)
-
-    log("Running... (Press Ctrl+C to exit)")
-    global shutdown_requested
     last_put_ts = time()
     pub_freq_sec = 1
-    try:
-        while not shutdown_requested:
+    pub_stats_sec = 5
+    put_stats_last_ts = time()
+    while not shutdown_requested:
+        try:
             client = await client_connect(config, mqtt_stats)
-            pub_stats_freq = 5
-            put_stats_last_ts = time()
             while client.connected and not shutdown_requested:
                 await asyncio.sleep(1)
                 last_put_ts, ok = await periodic_publish(client, last_put_ts, pub_freq_sec)
+                if ok:
+                    put_stats_last_ts, ok = await publish_stats(client, sta, put_stats_last_ts, pub_stats_sec)
                 if not ok:
-                    log("[MAIN] Failed to publish periodic message")
+                    log("[MAIN] Failed to publish message")
                     break
-                put_stats_last_ts, ok = await publish_stats(client, sta, put_stats_last_ts, pub_stats_freq)
-                if not ok:
-                    log("[MAIN] Failed to publish stats")
-                    break
-
-            log("Disconnected from broker, stopping periodic publish task.")
+            log("Disconnected from broker")
             await client.disconnect()
             if not shutdown_requested:
                 await asyncio.sleep(5)
+        except Exception as e:
+            log(f"Error in MQTT thread: {e}")
+            await asyncio.sleep(5)
 
-    except KeyboardInterrupt:
-        log("KeyboardInterrupt received, stopping.")
-        shutdown_requested = True
-        try:
-            await client.disconnect()
-        except Exception:
-            pass
+
+async def main():
+    """
+    Main asynchronous entry point for the program.
+
+    Responsibilities:
+    1. Initializes RAM usage tracking.
+    2. Registers signal handlers (e.g., for clean shutdown on SIGINT/SIGTERM).
+    3. Loads configuration from `config.json` using the `Config` class.
+    4. Connects to Wi-Fi using the provided SSID and password.
+    5. Starts the `mqtt_thread()` task in the background to manage MQTT connectivity and telemetry.
+    6. Enters a main loop where additional asynchronous tasks can be performed.
+
+    Notes:
+    - The `shutdown_requested` global variable can be used to trigger graceful termination in background tasks.
+    - The call to `asyncio.create_task()` ensures `mqtt_thread()` runs concurrently.
+    - The `while True` loop with `await asyncio.sleep(1)` acts as a placeholder for other logic that may be added later.
+
+    Example Use Case:
+        This kind of setup is typical in IoT devices where:
+        - MQTT handles telemetry or control messages.
+        - The main loop performs periodic measurements, device checks, or user interaction.
+
+    Dependencies:
+        - `check_ram_usage()`: Initializes memory tracking.
+        - `log()`: Logging function for console/debug output.
+        - `register_signal_handlers()`: Registers asyncio signal handlers for shutdown.
+        - `Config`: Class for loading Wi-Fi and MQTT broker configuration.
+        - `wifi(ssid, password)`: Connects to Wi-Fi.
+        - `mqtt_thread(config, sta)`: Coroutine managing MQTT connection and publishing.
+
+    """
+    check_ram_usage()
+    log("Stating aiomqttc example")
+    config = Config().load()
+    sta = wifi(config.wifi_ssid, config.wifi_password)
+    log("Running... (Press Ctrl+C to exit)")
+    global shutdown_requested
+    asyncio.create_task(mqtt_thread(config, sta))
+    while True:
+        # do something else
+        await asyncio.sleep(1)
 
 
 asyncio.run(main())
