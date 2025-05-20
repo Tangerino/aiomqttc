@@ -17,6 +17,7 @@ class Config:
         mqtt_password (str): Password for MQTT authentication.
         mqtt_tls (bool): Whether to use TLS for MQTT connection.
     """
+
     def __init__(self):
         """
         Initialize the Config object with default (empty) values.
@@ -41,7 +42,7 @@ class Config:
             Config: The current instance (self) for chaining.
         """
         try:
-            with open("config.json", "r") as config_file:
+            with open("config.json") as config_file:
                 config = json.load(config_file)
                 self.wifi_ssid = config.get("wifi", {}).get("ssid", "")
                 self.wifi_password = config.get("wifi", {}).get("password", "")

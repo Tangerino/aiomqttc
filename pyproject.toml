@@ -19,3 +19,17 @@ py-modules = ["aiomqttc", "main", "wifi", "config"]
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+extend-select = ["I", "UP", "RUF"]
+fix = true
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E501", "RUF012"]  # optionally ignore line-too-long
+
+[tool.ruff.format]
+quote-style = "preserve"
+line-ending = "auto"
