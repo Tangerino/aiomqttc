@@ -12,9 +12,10 @@ except ImportError:
         def print_exception(self, show_locals: bool = False):
             log("Console not available")
 
+
 console = Console()
 
-__version__ = "1.0.3"
+__version__ = "1.0.4"
 
 # Determine if running on MicroPython
 _IS_MICROPYTHON = sys.implementation.name == "micropython"
@@ -23,39 +24,33 @@ _IS_ESP32 = sys.platform == "esp32" if _IS_MICROPYTHON else False
 # Import platform-specific modules conditionally
 if _IS_MICROPYTHON:
     try:
-        from micropython import const
         from machine import RTC as hal_rtc
+        from micropython import const
     except ImportError:
         # Fallback for platforms that don't support const
         def const(x):
             return x
 
-
         def hal_rtc():
             return None
 
-    from time import ticks_ms, ticks_diff, ticks_add, gmtime
+    from time import gmtime, ticks_add, ticks_diff, ticks_ms
 
 else:
-    from time import monotonic, gmtime
-
+    from time import gmtime, monotonic
 
     def const(x):
         return x
-
 
     # Define platform-independent ticks functions
     def ticks_ms():
         return int(monotonic() * 1000)
 
-
     def ticks_diff(ticks1, ticks2):
         return ticks1 - ticks2
 
-
     def ticks_add(ticks1, ticks2):
         return ticks1 + ticks2
-
 
     def hal_rtc():
         return None
@@ -89,15 +84,15 @@ class RTC:
 
 class Datetime:
     def __init__(
-            self,
-            year: int = 0,
-            month: int = 0,
-            day: int = 0,
-            hour: int = 0,
-            minute: int = 0,
-            second: int = 0,
-            weekday: int = 0,
-            usec: int = 0,
+        self,
+        year: int = 0,
+        month: int = 0,
+        day: int = 0,
+        hour: int = 0,
+        minute: int = 0,
+        second: int = 0,
+        weekday: int = 0,
+        usec: int = 0,
     ):
         self.year: int = year
         self.month: int = month
@@ -123,9 +118,7 @@ class Datetime:
         return self
 
     def __str__(self):
-        return "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(
-            self.year, self.month, self.day, self.hour, self.minute, self.second
-        )
+        return f"{self.year:04d}-{self.month:02d}-{self.day:02d} {self.hour:02d}:{self.minute:02d}:{self.second:02d}"
 
 
 def log(msg: str = ""):
@@ -142,8 +135,8 @@ def memory_dump(data, offset=0, length=None, header: str = ""):
     if length is None:
         length = len(data) - offset
     for i in range(offset, offset + length, 16):
-        line = " ".join("{:02x}".format(c) for c in data[i: i + 16])
-        log("{:04d}: {}".format(i, line))
+        line = " ".join(f"{c:02x}" for c in data[i : i + 16])
+        log(f"{i:04d}: {line}")
 
 
 def dump_array(data, header=None, length=16, force_publish: bool = False):
@@ -166,7 +159,7 @@ def _dump_array_aux(data, header, length):
     lines = []
     digits = 4 if isinstance(data, str) else 2
     for c in range(0, len(data), length):
-        chars = data[c: c + length]
+        chars = data[c : c + length]
         hex_string = " ".join("%0*x" % (digits, x) for x in chars)
         printable = "".join(f"{(x <= 127 and print_table[x]) or '.'}" for x in chars)
         lines.append("%04d  %-*s  %s\n" % (c, length * 3, hex_string, printable))
@@ -197,13 +190,13 @@ class StreamConnection:
 
     @classmethod
     async def open(
-            cls,
-            host,
-            port,
-            ssl=False,
-            timeout=None,
-            is_micropython: bool = False,
-            debug=False,
+        cls,
+        host,
+        port,
+        ssl=False,
+        timeout=None,
+        is_micropython: bool = False,
+        debug=False,
     ):
         self = cls(None, None, is_micropython, debug)
         self._host = host
@@ -287,7 +280,7 @@ class StreamConnection:
         idx = self._buffer.find(delimiter)
         if idx >= 0:
             result = self._buffer[: idx + len(delimiter)]
-            self._buffer = self._buffer[idx + len(delimiter):]
+            self._buffer = self._buffer[idx + len(delimiter) :]
             return bytes(result)
         else:
             result = self._buffer[:]
@@ -393,10 +386,26 @@ class MqttStats:
 
     def get_stats(self):
         # add some stats aggregation
-        pub_rtt_ms = sum(self.pub_rtt_ms_list) / len(self.pub_rtt_ms_list) if self.pub_rtt_ms_list else 0
-        pub_package_size = sum(self.pub_package_size_list) / len(self.pub_package_size_list) if self.pub_package_size_list else 0
-        sub_package_size = sum(self.sub_package_size_list) / len(self.sub_package_size_list) if self.sub_package_size_list else 0
-        ping_rtt_ms = sum(self.ping_rtt_ms_list) / len(self.ping_rtt_ms_list) if self.ping_rtt_ms_list else 0
+        pub_rtt_ms = (
+            sum(self.pub_rtt_ms_list) / len(self.pub_rtt_ms_list)
+            if self.pub_rtt_ms_list
+            else 0
+        )
+        pub_package_size = (
+            sum(self.pub_package_size_list) / len(self.pub_package_size_list)
+            if self.pub_package_size_list
+            else 0
+        )
+        sub_package_size = (
+            sum(self.sub_package_size_list) / len(self.sub_package_size_list)
+            if self.sub_package_size_list
+            else 0
+        )
+        ping_rtt_ms = (
+            sum(self.ping_rtt_ms_list) / len(self.ping_rtt_ms_list)
+            if self.ping_rtt_ms_list
+            else 0
+        )
         return {
             "packets_sent": self.packets_sent,
             "packets_received": self.packets_received,
@@ -411,7 +420,7 @@ class MqttStats:
             "connections_failed": self.connections_failed,
             "ping_sent_count": self.ping_sent_count,
             "ping_received_count": self.ping_received_count,
-            "ping_rtt_ms": int(ping_rtt_ms)
+            "ping_rtt_ms": int(ping_rtt_ms),
         }
 
 
@@ -454,16 +463,21 @@ class MQTTProtocol:
         # self._retry_task = asyncio.create_task(self._retry_pubacks_loop())
 
     async def connect(
-            self,
-            server,
-            port,
-            client_id,
-            user,
-            password,
-            keepalive,
-            ssl=False,
-            ssl_params=None,
-            timeout_sec=10,
+        self,
+        server,
+        port,
+        client_id,
+        user,
+        password,
+        keepalive,
+        ssl=False,
+        ssl_params=None,
+        timeout_sec=10,
+        clean_session=True,
+        will_topic=None,
+        will_message=None,
+        will_qos=0,
+        will_retain=False,
     ):
         self.timeout_sec = timeout_sec
         try:
@@ -477,7 +491,17 @@ class MQTTProtocol:
                 debug=self.verbose == 2,
             )
 
-            packet = self._build_connect_packet(client_id, user, password, keepalive)
+            packet = self._build_connect_packet(
+                client_id,
+                user,
+                password,
+                keepalive,
+                clean_session,
+                will_topic,
+                will_message,
+                will_qos,
+                will_retain,
+            )
             await self._send_packet(self.CONNECT, packet)
 
             resp = await asyncio.wait_for(self._read_packet(), timeout=5)
@@ -571,7 +595,7 @@ class MQTTProtocol:
 
         try:
             resp = await asyncio.wait_for(self._read_packet(), timeout=timeout_sec)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             log("SUBACK timeout")
             return None
 
@@ -640,11 +664,11 @@ class MQTTProtocol:
                 qos = (packet_type & 0x06) >> 1
                 retain = packet_type & 0x01
                 topic_len = struct.unpack("!H", payload[:2])[0]
-                topic = payload[2: 2 + topic_len].decode()
+                topic = payload[2 : 2 + topic_len].decode()
                 offset = 2 + topic_len
 
                 if qos > 0:
-                    pid = struct.unpack("!H", payload[offset: offset + 2])[0]
+                    pid = struct.unpack("!H", payload[offset : offset + 2])[0]
                     offset += 2
                     if qos == 1:
                         await self._send_packet(self.PUBACK, struct.pack("!H", pid))
@@ -686,7 +710,7 @@ class MQTTProtocol:
                     log(f"UNSUBACK received for PID {pid}")
                     # Aqui você pode remover do dict se quiser
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             log("Packet read timeout")
             return False
 
@@ -753,18 +777,34 @@ class MQTTProtocol:
 
         await self.stream.write(packet, timeout=self.timeout_sec)
 
-    def _build_connect_packet(self, client_id, user, password, keepalive):
+    def _build_connect_packet(
+        self,
+        client_id,
+        user,
+        password,
+        keepalive,
+        clean_session,
+        will_topic,
+        will_message,
+        will_qos,
+        will_retain,
+    ):
         packet = bytearray()
         packet.extend(self._encode_string("MQTT"))
         packet.append(4)  # Protocol level 4 (MQTT 3.1.1)
-        flags = 0x02  # Clean session
+        flags = 0x02 if clean_session else 0x00
         if user:
             flags |= 0x80
         if password:
             flags |= 0x40
+        if will_topic and will_message:
+            flags |= 0x04 | (will_qos << 3) | (will_retain << 5)
         packet.append(flags)
         packet.extend(struct.pack("!H", keepalive))
         packet.extend(self._encode_string(client_id))
+        if will_topic and will_message:
+            packet.extend(self._encode_string(will_topic))
+            packet.extend(self._encode_string(will_message))
         if user:
             packet.extend(self._encode_string(user))
         if password:
@@ -800,11 +840,15 @@ class MQTTProtocol:
         while True:
             await asyncio.sleep(1)
             now = ticks_ms()
-            for pid, (ts, topic, message, qos, retain, dup) in list(self._pending_pubacks.items()):
+            for pid, (ts, topic, message, qos, retain, dup) in list(
+                self._pending_pubacks.items()
+            ):
                 if ticks_diff(now, ts) > RETRY_INTERVAL:
                     log(f"Retrying QoS 1 message PID {pid} (dup={dup})")
                     try:
-                        await self._resend_qos1(pid, topic, message, qos, retain, dup=True)
+                        await self._resend_qos1(
+                            pid, topic, message, qos, retain, dup=True
+                        )
                         self._pending_pubacks[pid] = (
                             ticks_ms(),
                             topic,
@@ -833,17 +877,22 @@ class MQTTProtocol:
 
 class MQTTClient:
     def __init__(
-            self,
-            client_id=None,
-            server=None,
-            port=1883,
-            user=None,
-            password=None,
-            keepalive=60,
-            ssl=False,
-            ssl_params=None,
-            verbose: int = 0,
-            stats: MqttStats = None,
+        self,
+        client_id=None,
+        server=None,
+        port=1883,
+        user=None,
+        password=None,
+        keepalive=60,
+        ssl=False,
+        ssl_params=None,
+        verbose: int = 0,
+        stats: MqttStats = None,
+        clean_session: bool = True,
+        will_topic=None,
+        will_message=None,
+        will_qos=0,
+        will_retain=False,
     ):
         self.client_id = (
             client_id if client_id and len(client_id) >= 2 else generate_client_id()
@@ -876,6 +925,11 @@ class MQTTClient:
         self._receive_task = None
         self.stats: MqttStats = stats or MqttStats()
         self.protocol = MQTTProtocol(self)
+        self.clean_session = clean_session
+        self.will_topic = will_topic
+        self.will_message = will_message
+        self.will_qos = will_qos
+        self.will_retain = will_retain
 
     def __repr__(self):
         return f"MQTTClient(client_id={self.client_id}, server={self.server}, port={self.port})"
@@ -899,8 +953,13 @@ class MQTTClient:
                         self.ssl,
                         self.ssl_params,
                         timeout_sec,
+                        self.clean_session,
+                        self.will_topic,
+                        self.will_message,
+                        self.will_qos,
+                        self.will_retain,
                     ),
-                    timeout=timeout_sec
+                    timeout=timeout_sec,
                 )
             except Exception as e:
                 log(f"Failed to connect to {self.server}:{self.port}: {e}")
@@ -923,7 +982,7 @@ class MQTTClient:
 
             return True
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             log("Connection timeout")
             await self.handle_disconnect()
         except Exception as e:
@@ -1035,7 +1094,7 @@ class MQTTClient:
                     log("Receive error, stopping loop")
                     self.mark_disconnected()
                     break
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 if not self.connected:
                     break
                 log("Receive timeout")
@@ -1083,10 +1142,10 @@ class MQTTClient:
             log("Disconnected from broker")
 
         should_reconnect = was_connected or (
-                return_code and return_code in self.protocol.RECONNECTABLE_ERRORS
+            return_code and return_code in self.protocol.RECONNECTABLE_ERRORS
         )
         if should_reconnect:
-            asyncio.create_task(self._reconnect())
+            asyncio.create_task(self._reconnect())  # noqa: RUF006 - ephemeral, run-and-die
 
     async def _reconnect(self):
         if self.reconnect_interval <= 0 or self.max_reconnect_interval <= 0:

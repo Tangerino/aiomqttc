@@ -1,3 +1,9 @@
+![Keep a Changelog](https://img.shields.io/badge/changelog-keep-blue?style=flat-square)
+
+[Keep a Changelog]: https://keepachangelog.com/en/1.0.0/
+
+[Semantic Versioning]: https://semver.org/spec/v2.0.0.html
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
@@ -5,6 +11,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog] and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
+
+## [1.0.4] - 2025-05-20
+
+### Added
+
+- Support to `clean_session` parameter in the class constructor.
+- Support to last will message in the class constructor.
+- Integrated [Ruff](https://docs.astral.sh/ruff/) for linting and formatting.
+    - Added optional [dev] dependencies in pyproject.toml for development tools:
+    - ruff for linting and formatting
+    - pre-commit for enforcing code quality on commits
+
+### Changed
+
+- Reorganized `CHANGELOG.md` with badges, proper Markdown formatting, and clarified descriptions for all past releases.
+- Reformatted codebase to comply with Ruff's default style rules.
+- Updated pyproject.toml to follow the latest Ruff configuration structure ([tool.ruff.lint] instead of top-level
+  extend-select).
+- Disabled Ruff rule RUF012 to maintain MicroPython compatibility (no ClassVar).
+- The main application now publishes a copy of each stats message to /test/test, creating a feedback loop for
+  stress-testing both publish and subscribe paths.
 
 ## [1.0.3] - 2025-05-18
 
@@ -30,8 +57,36 @@ The format is based on [Keep a Changelog] and this project adheres to [Semantic 
         echo
       done
       ```
-- Enhance robustness on the `main()` application. Clean and organize the code.
-- Add client statistics functionality to track the number of messages sent, received, and acknowledged.
+        - You will see a nice table with the statistics such as:
+          ```bash
+            Tue May 20 00:15:08 -03 2025
+            client    _id                     esp32_client_8378
+            client    bytes_received          1337
+            client    bytes_sent              21351635
+            client    connections_failed      12
+            client    connections_sent        18
+            client    packets_received        140
+            client    packets_sent            155652
+            client    ping_received_count     18710
+            client    ping_rtt_ms             70
+            client    ping_sent_count         18713
+            client    pub_fail_count          5
+            client    pub_ok_count            155647
+            client    pub_package_avg_size    95
+            client    pub_rtt_ms              121
+            client    sub_package_avg_size    9
+            wifi      ip                      192.168.86.21
+            wifi      mac                     c8:c9:a3:d4:85:ec
+            wifi      signal                  -79
+            wifi      signal_lowest           -98
+            uptime    uptime                  1d 18h 6m 19s
+            uptime    uptime_sec              151579
+            ram       allocated               40736
+            ram       free                    4068960
+            ram       free_lowest             3932192
+            ram       max_allocated           112000
+
+- Refactored `main()` for robustness and clarity; added support for client statistics reporting.
 - Tested under very low Wi-Fi signal conditions:
     - The device was placed in a location with very low Wi-Fi signal strength.
     - The device was able to connect to the broker and publish messages, but with high latency and packet drops.
@@ -53,8 +108,8 @@ The format is based on [Keep a Changelog] and this project adheres to [Semantic 
 
 - Prevented multiple in-flight QoS 1 messages with conflicting PIDs.
 - Enhanced error handling for MQTT connection failures and timeouts.
-- Remove invalid `raise`
-- Fix PID generation being called twice.
+- Removed invalid raise statement
+- Fixed PID generation being called twice.
 
 ## [1.0.1] - 2025-05-16
 
@@ -65,7 +120,7 @@ The format is based on [Keep a Changelog] and this project adheres to [Semantic 
 
 ### Added
 
-- changelog file.
+- Changelog file.
 - New callback for `ping` events. Ping callback signature is `async def on_ping(client, request: bool, rtt_ms: int)`.
 - Demo prints out ping RTT and RAM usage
 
@@ -91,3 +146,4 @@ The format is based on [Keep a Changelog] and this project adheres to [Semantic 
 ### Added
 
 - Initial public release.
+

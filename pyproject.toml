@@ -1,6 +1,6 @@
 [project]
 name = "aiomqttc"
-version = "1.0.3"
+version = "1.0.4"
 description = "aiomqttc - Asynchronous MQTT Client"
 authors = [
     { name = "Carlos Tangerino", email = "carlos.tangerino@gmail.com" }
@@ -13,9 +13,29 @@ dependencies = [
     "rich>=14.0.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.4.0",
+    "pre-commit>=3.7.0",
+]
+
 [tool.setuptools]
 py-modules = ["aiomqttc", "main", "wifi", "config"]
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+fix = true
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E501", "RUF012"]
+extend-select = ["I", "UP", "RUF"]
+
+[tool.ruff.format]
+quote-style = "preserve"
+line-ending = "auto"

@@ -12,7 +12,7 @@ import json
 import random
 from time import time
 
-from aiomqttc import MQTTClient, log, MqttStats
+from aiomqttc import MQTTClient, MqttStats, log
 from config import Config
 from wifi import wifi
 
@@ -24,53 +24,6 @@ lowest_wifi_signal = None
 mqtt_stats: MqttStats = MqttStats()
 
 boot_time = time()
-
-
-def get_uptime():
-    """
-        Calculate the system uptime since `boot_time`.
-
-        Returns:
-            dict: A dictionary containing:
-                - "uptime" (str): Human-readable uptime string in the format "Xd Yh Zm Ws"
-                - "uptime_sec" (int): Total number of seconds since `boot_time`
-
-        Example:
-            >>> get_uptime()
-            {
-                'uptime': '0d 2h 17m 35s',
-                'uptime_sec': 8255
-            }
-
-        Note:
-            This function assumes that `boot_time` is a global variable set to the system time
-            at the moment the application started, typically via `boot_time = time()`.
-    """
-    uptime = int(time() - boot_time)
-    minutes = uptime // 60
-    hours = minutes // 60
-    days = hours // 24
-    str_uptime = f"{int(days)}d {int(hours % 24)}h {int(minutes % 60)}m {int(uptime % 60)}s"
-    return {
-        "uptime": str_uptime,
-        "uptime_sec": uptime,
-    }
-
-
-def gc_mem_free() -> int:
-    if hasattr(gc, "mem_free"):
-        return gc.mem_free()
-    return 0
-
-
-def gc_mem_alloc():
-    if hasattr(gc, "mem_alloc"):
-        return gc.mem_alloc()
-    return 0
-
-
-async def on_message(client, topic, payload, retain):
-    log(f"Received message on {topic}: {payload.decode()}")
 
 
 def check_wifi_signal(sta, quiet: bool = False) -> dict:
@@ -85,7 +38,7 @@ def check_wifi_signal(sta, quiet: bool = False) -> dict:
             lowest_wifi_signal = rssi
 
         ip = sta.ifconfig()[0]
-        mac = ":".join("{:02x}".format(b) for b in sta.config("mac"))
+        mac = ":".join(f"{b:02x}" for b in sta.config("mac"))
         if not quiet:
             log("WiFi Signal Strength")
             log(f"    WiFi Signal Strength: {rssi} dBm")
@@ -149,6 +102,56 @@ def check_ram_usage() -> dict:
         "free_lowest": lowest_ram_free,
         "max_allocated": max_ram_usage,
     }
+
+
+def get_uptime():
+    """
+    Calculate the system uptime since `boot_time`.
+
+    Returns:
+        dict: A dictionary containing:
+            - "uptime" (str): Human-readable uptime string in the format "Xd Yh Zm Ws"
+            - "uptime_sec" (int): Total number of seconds since `boot_time`
+
+    Example:
+        >>> get_uptime()
+        {
+            'uptime': '0d 2h 17m 35s',
+            'uptime_sec': 8255
+        }
+
+    Note:
+        This function assumes that `boot_time` is a global variable set to the system time
+        at the moment the application started, typically via `boot_time = time()`.
+    """
+    uptime = int(time() - boot_time)
+    minutes = uptime // 60
+    hours = minutes // 60
+    days = hours // 24
+    str_uptime = (
+        f"{int(days)}d {int(hours % 24)}h {int(minutes % 60)}m {int(uptime % 60)}s"
+    )
+    return {
+        "uptime": str_uptime,
+        "uptime_sec": uptime,
+    }
+
+
+def gc_mem_free() -> int:
+    if hasattr(gc, "mem_free"):
+        return gc.mem_free()
+    return 0
+
+
+def gc_mem_alloc():
+    if hasattr(gc, "mem_alloc"):
+        return gc.mem_alloc()
+    return 0
+
+
+async def on_message(client, topic, payload, retain):
+    message = payload.decode("latin-1")
+    log(f"Received message on {topic}: {len(message)} bytes - {message[:50]}...")
 
 
 # Define callback for successful connection
@@ -223,6 +226,10 @@ async def client_connect(config: Config, stats: MqttStats) -> MQTTClient:
     ssl = config.mqtt_tls
     keepalive = 15
     verbose: int = 0
+    will_topic = "micropython/disconnect"
+    will_message = f"Client {client_id} disconnected"
+    will_qos = 1
+    will_retain = False
     # ================
     client = MQTTClient(
         client_id=client_id,
@@ -234,6 +241,11 @@ async def client_connect(config: Config, stats: MqttStats) -> MQTTClient:
         port=port,
         verbose=verbose,
         stats=stats,
+        clean_session=True,
+        will_topic=will_topic,
+        will_message=will_message,
+        will_qos=will_qos,
+        will_retain=will_retain,
     )
     # ================
     client.on_message = on_message
@@ -255,7 +267,9 @@ async def client_connect(config: Config, stats: MqttStats) -> MQTTClient:
     return client
 
 
-async def publish_stats(client: MQTTClient, sta, put_stats_last_ts: int, pub_stats_freq: int):
+async def publish_stats(
+    client: MQTTClient, sta, put_stats_last_ts: int, pub_stats_freq: int
+):
     """
     Collect and publish system statistics over MQTT, with rate limiting.
 
@@ -301,8 +315,11 @@ async def publish_stats(client: MQTTClient, sta, put_stats_last_ts: int, pub_sta
         "uptime": uptime_stats,
     }
     message = json.dumps(stats, separators=(",", ":"))
-    log(f"Publishing stats:{message}")
+    log(f"Publishing stats: {len(message)} bytes - {message[:50]}...")
     ok = await client.publish("micropython/stats", message, qos=1)
+    if ok:
+        ok = await client.publish("test/test", message, qos=1)  # echo back
+
     if not ok:
         log("[MAIN] Failed to publish stats")
     return time(), ok
@@ -350,9 +367,13 @@ async def mqtt_thread(config: Config, sta):
             client = await client_connect(config, mqtt_stats)
             while client.connected and not shutdown_requested:
                 await asyncio.sleep(1)
-                last_put_ts, ok = await periodic_publish(client, last_put_ts, pub_freq_sec)
+                last_put_ts, ok = await periodic_publish(
+                    client, last_put_ts, pub_freq_sec
+                )
                 if ok:
-                    put_stats_last_ts, ok = await publish_stats(client, sta, put_stats_last_ts, pub_stats_sec)
+                    put_stats_last_ts, ok = await publish_stats(
+                        client, sta, put_stats_last_ts, pub_stats_sec
+                    )
                 if not ok:
                     log("[MAIN] Failed to publish message")
                     break
@@ -402,10 +423,12 @@ async def main():
     sta = wifi(config.wifi_ssid, config.wifi_password)
     log("Running... (Press Ctrl+C to exit)")
     global shutdown_requested
-    asyncio.create_task(mqtt_thread(config, sta))
-    while True:
+    config_tcb = asyncio.create_task(mqtt_thread(config, sta))
+    while not shutdown_requested:
         # do something else
         await asyncio.sleep(1)
+    log("Exiting main loop")
+    await config_tcb
 
 
 asyncio.run(main())
