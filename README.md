@@ -19,6 +19,20 @@ Tested on:
 - Keep-alive and ping management
 - Clean connection termination
 
+## Development Setup
+
+This project uses [`pre-commit`](https://pre-commit.com/) to enforce code quality using [Ruff](https://docs.astral.sh/ruff/).
+
+Install it once:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+Then, every time you commit, it will run the configured hooks.
+
+
 ## Installation
 
 ### For Python environments:

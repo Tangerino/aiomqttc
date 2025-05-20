@@ -13,6 +13,12 @@ dependencies = [
     "rich>=14.0.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.4.0",
+    "pre-commit>=3.7.0",
+]
+
 [tool.setuptools]
 py-modules = ["aiomqttc", "main", "wifi", "config"]
 
@@ -23,12 +29,12 @@ build-backend = "setuptools.build_meta"
 [tool.ruff]
 line-length = 88
 target-version = "py311"
-extend-select = ["I", "UP", "RUF"]
 fix = true
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP"]
-ignore = ["E501", "RUF012"]  # optionally ignore line-too-long
+ignore = ["E501", "RUF012"]
+extend-select = ["I", "UP", "RUF"]
 
 [tool.ruff.format]
 quote-style = "preserve"

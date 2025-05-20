@@ -26,55 +26,6 @@ mqtt_stats: MqttStats = MqttStats()
 boot_time = time()
 
 
-def get_uptime():
-    """
-    Calculate the system uptime since `boot_time`.
-
-    Returns:
-        dict: A dictionary containing:
-            - "uptime" (str): Human-readable uptime string in the format "Xd Yh Zm Ws"
-            - "uptime_sec" (int): Total number of seconds since `boot_time`
-
-    Example:
-        >>> get_uptime()
-        {
-            'uptime': '0d 2h 17m 35s',
-            'uptime_sec': 8255
-        }
-
-    Note:
-        This function assumes that `boot_time` is a global variable set to the system time
-        at the moment the application started, typically via `boot_time = time()`.
-    """
-    uptime = int(time() - boot_time)
-    minutes = uptime // 60
-    hours = minutes // 60
-    days = hours // 24
-    str_uptime = (
-        f"{int(days)}d {int(hours % 24)}h {int(minutes % 60)}m {int(uptime % 60)}s"
-    )
-    return {
-        "uptime": str_uptime,
-        "uptime_sec": uptime,
-    }
-
-
-def gc_mem_free() -> int:
-    if hasattr(gc, "mem_free"):
-        return gc.mem_free()
-    return 0
-
-
-def gc_mem_alloc():
-    if hasattr(gc, "mem_alloc"):
-        return gc.mem_alloc()
-    return 0
-
-
-async def on_message(client, topic, payload, retain):
-    log(f"Received message on {topic}: {payload.decode()}")
-
-
 def check_wifi_signal(sta, quiet: bool = False) -> dict:
     """Check and log WiFi signal strength"""
     global lowest_wifi_signal
@@ -151,6 +102,56 @@ def check_ram_usage() -> dict:
         "free_lowest": lowest_ram_free,
         "max_allocated": max_ram_usage,
     }
+
+
+def get_uptime():
+    """
+    Calculate the system uptime since `boot_time`.
+
+    Returns:
+        dict: A dictionary containing:
+            - "uptime" (str): Human-readable uptime string in the format "Xd Yh Zm Ws"
+            - "uptime_sec" (int): Total number of seconds since `boot_time`
+
+    Example:
+        >>> get_uptime()
+        {
+            'uptime': '0d 2h 17m 35s',
+            'uptime_sec': 8255
+        }
+
+    Note:
+        This function assumes that `boot_time` is a global variable set to the system time
+        at the moment the application started, typically via `boot_time = time()`.
+    """
+    uptime = int(time() - boot_time)
+    minutes = uptime // 60
+    hours = minutes // 60
+    days = hours // 24
+    str_uptime = (
+        f"{int(days)}d {int(hours % 24)}h {int(minutes % 60)}m {int(uptime % 60)}s"
+    )
+    return {
+        "uptime": str_uptime,
+        "uptime_sec": uptime,
+    }
+
+
+def gc_mem_free() -> int:
+    if hasattr(gc, "mem_free"):
+        return gc.mem_free()
+    return 0
+
+
+def gc_mem_alloc():
+    if hasattr(gc, "mem_alloc"):
+        return gc.mem_alloc()
+    return 0
+
+
+async def on_message(client, topic, payload, retain):
+    message = payload.decode("latin-1")
+    log(f"Received message on {topic}: {len(message)} bytes - {message[:50]}...")
 
 
 # Define callback for successful connection
@@ -314,8 +315,11 @@ async def publish_stats(
         "uptime": uptime_stats,
     }
     message = json.dumps(stats, separators=(",", ":"))
-    log(f"Publishing stats:{message}")
+    log(f"Publishing stats: {len(message)} bytes - {message[:50]}...")
     ok = await client.publish("micropython/stats", message, qos=1)
+    if ok:
+        ok = await client.publish("test/test", message, qos=1)  # echo back
+
     if not ok:
         log("[MAIN] Failed to publish stats")
     return time(), ok
