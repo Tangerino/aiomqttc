@@ -1,6 +1,6 @@
 [project]
 name = "aiomqttc"
-version = "1.0.3"
+version = "1.0.4"
 description = "aiomqttc - Asynchronous MQTT Client"
 authors = [
     { name = "Carlos Tangerino", email = "carlos.tangerino@gmail.com" }
