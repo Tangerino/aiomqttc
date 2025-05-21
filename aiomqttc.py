@@ -15,7 +15,7 @@ except ImportError:
 
 console = Console()
 
-__version__ = "1.0.4"
+__version__ = "1.0.6"
 
 # Determine if running on MicroPython
 _IS_MICROPYTHON = sys.implementation.name == "micropython"

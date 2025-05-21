@@ -1,17 +1,40 @@
 [project]
 name = "aiomqttc"
-version = "1.0.4"
-description = "aiomqttc - Asynchronous MQTT Client"
+version = "1.0.6"
+description = "aiomqttc - Asynchronous MQTT Client for Micropython and Python"
 authors = [
     { name = "Carlos Tangerino", email = "carlos.tangerino@gmail.com" }
 ]
 readme = "README.md"
-license = {text = "Unlicense"}
-requires-python = ">=3.11"
-keywords = ["mqtt", "asyncio", "iot", "client", "micropython"]
+license = { text = "Unlicense" }
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+keywords = ["micropython", "mqtt", "asyncio", "iot", "client"]
 dependencies = [
     "rich>=14.0.0",
 ]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: Public Domain",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: MicroPython",
+    "Topic :: Internet",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+]
+
+[project.urls]
+Homepage = "https://github.com/Tangerino/aiomqttc.git"
+Documentation = "https://github.com/Tangerino/aiomqttc.git"
+Source = "https://github.com/Tangerino/aiomqttc.git"
+Issues = "https://github.com/Tangerino/aiomqttc.git"
+
+
 
 [project.optional-dependencies]
 dev = [
